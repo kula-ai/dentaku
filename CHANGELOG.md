@@ -1,11 +1,20 @@
 # Change Log
 
 ## [UNRELEASED]
+
+## [v3.5.8] 2026-08-01
 - unify numeric matching and parsing
 - fix frozen-string-literal warning
-- fix dependency resolution order for mixed-case variables in case-sensitive bulk expressions
+- fix alias function calls with whitespace before the opening parenthesis
+  (#335, thanks @DirkDoes)
+- declare `tsort` as an explicit dependency for Ruby 4.1 (#334, thanks @david942j)
+- fix dependency resolution order for mixed-case variables in case-sensitive
+  bulk expressions (#353, thanks @connortorrell)
 - stop exposing downcased aliases of constants to case-sensitive bulk expressions,
   and fix the memory fallback missing mixed-case values
+- return a String from `name` for Ruby Math functions and functions registered
+  under a Symbol, per the `Module#name` contract (#348, thanks @toy)
+- test against Ruby 3.0 through 4.0 (2.5 - 2.7 are no longer covered by CI)
 
 ## [v3.5.7] 2025-12-16
 - fix misclassification of unary minus as subtraction
