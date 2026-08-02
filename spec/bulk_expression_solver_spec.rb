@@ -130,6 +130,41 @@ RSpec.describe Dentaku::BulkExpressionSolver do
       )
     end
 
+    it 'resolves mixed-case keys declared out of order when case-sensitive' do
+      calculator = Dentaku::Calculator.new(case_sensitive: true)
+      expressions = {
+        'TopLevel'    => 'MidLevel * 2',
+        'MidLevel'    => 'BottomLevel * 2',
+        'BottomLevel' => '2'
+      }
+
+      result = described_class.new(expressions, calculator).solve
+
+      expect(result).to eq(
+        'TopLevel'    => 8,
+        'MidLevel'    => 4,
+        'BottomLevel' => 2
+      )
+    end
+
+    it 'does not expose a downcased alias of a constant when case-sensitive' do
+      calculator = Dentaku::Calculator.new(case_sensitive: true)
+      expressions = { 'BottomLevel' => '2', 'TopLevel' => 'bottomlevel * 2' }
+
+      expect {
+        described_class.new(expressions, calculator).solve!
+      }.to raise_error(Dentaku::UnboundVariableError, /bottomlevel/)
+    end
+
+    it 'falls back to mixed-case memory values when case-sensitive' do
+      calculator = Dentaku::Calculator.new(case_sensitive: true)
+      calculator.store('MyVar' => 7)
+
+      result = described_class.new({ 'MyVar' => 'Missing + 1' }, calculator).solve
+
+      expect(result).to eq('MyVar' => 7)
+    end
+
     it "returns :undefined when variables are unbound" do
       expressions = {more_apples: "apples + 1"}
       expect(described_class.new(expressions, calculator).solve)

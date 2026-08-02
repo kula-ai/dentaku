@@ -85,7 +85,7 @@ module Dentaku
     end
 
     def load_results(&block)
-      facts, _formulas = expressions.transform_keys(&:downcase)
+      facts, _formulas = expressions.transform_keys { |k| normalized_name(k) }
                                     .transform_values { |v| calculator.ast(v) }
                                     .partition { |_, v| calculator.dependencies(v, nil).empty? }
 
@@ -101,7 +101,7 @@ module Dentaku
         next if expressions[var_name].nil?
 
         with_rescues(var_name, results, block) do
-          results[var_name] = evaluated_facts[var_name] || evaluator.evaluate(
+          results[var_name] = evaluated_facts[normalized_name(var_name)] || evaluator.evaluate(
             expressions[var_name],
             context.merge(results),
             &expression_with_exception_handler(var_name, &block)
@@ -123,9 +123,16 @@ module Dentaku
       ex.recipient_variable = var_name
       results[var_name] = block.call(ex)
     ensure
-      if results[var_name] == :undefined && calculator.memory.has_key?(var_name.downcase)
-        results[var_name] = calculator.memory[var_name.downcase]
+      stored_name = normalized_name(var_name)
+      if results[var_name] == :undefined && calculator.memory.has_key?(stored_name)
+        results[var_name] = calculator.memory[stored_name]
       end
+    end
+
+    # names are normalized the same way the calculator stores them, so that
+    # facts and memory lookups line up with the identifiers the parser emits
+    def normalized_name(variable_name)
+      calculator.standardize_case(variable_name.to_s)
     end
 
     def expressions
@@ -147,9 +154,9 @@ module Dentaku
     end
 
     def variables_in_resolve_order
-      cache_key = expressions.keys.map(&:to_s).sort.join("|")
+      cache_key = "#{!!calculator.case_sensitive}|#{expressions.keys.map(&:to_s).sort.join("|")}"
       @ordered_deps ||= self.class.dependency_cache.fetch(cache_key) {
-        DependencyResolver.find_resolve_order(dependencies).tap do |d|
+        DependencyResolver.find_resolve_order(dependencies, calculator.case_sensitive).tap do |d|
           self.class.dependency_cache[cache_key] = d if Dentaku.cache_dependency_order?
         end
       }
