@@ -1,7 +1,15 @@
 # Change Log
 
-## [Unreleased]
+## [v4.0.0] 2026-08-01
 BREAKING CHANGES
+- require Ruby 3.2 or newer
+- `Calculator.new` takes keyword arguments; the AST cache must now be passed
+  explicitly via `ast_cache:` instead of as leftover options, unknown options
+  raise `ArgumentError`, and the passed values are no longer mutated
+- `Dentaku::Error` is now a module included by all Dentaku exceptions, so
+  `rescue Dentaku::Error` also catches `Dentaku::ArgumentError` and
+  `Dentaku::ZeroDivisionError`; exceptions that previously subclassed
+  `Dentaku::Error` now subclass `Dentaku::BaseError`
 - unify exception metadata naming: the "required vs. received" pair is now
   `expected:` / `actual:` everywhere (previously a mix of `expect:`/`actual:`,
   `for:`/`value:`, `at_least:`/`given:`, and `exact:`/`given:`); arity
@@ -16,10 +24,20 @@ BREAKING CHANGES
 - bitwise operations on non-integer operands raise `:incompatible_type`
   (previously `:invalid_operator`) with a descriptive message instead of a
   bare "Dentaku::ArgumentError"
+- indexing into a non-indexable value (e.g. `a[0]` where `a` is a number,
+  `NULL`, or a boolean) now raises `Dentaku::ArgumentError` instead of
+  silently returning a bit-reference result or leaking a raw Ruby
+  `NoMethodError`; an incompatible index type (e.g. a string index into an
+  array) raises `Dentaku::ArgumentError` instead of a raw `TypeError`
+- `AND` / `OR` short-circuit: an unbound variable no longer raises when the
+  bound operand already decides the result (#234); formulas are documented
+  as pure, and misspelled identifiers on never-taken branches are no longer
+  reported at evaluation time (use `dependencies` for static validation)
+- `TokenMatcher` no longer builds function matchers via `method_missing`; use
+  `TokenMatcher.function(name)` (the unused `math_neg_pow` / `math_neg_mul`
+  matcher symbols were removed)
 
 OTHER CHANGES
-- `Dentaku::ArgumentError` builds default messages from reason and metadata,
-  like `ParseError` and `TokenizerError`
 - add `volatile:` option to `add_function` / `add_functions` / function
   registration for functions that read external state or return different
   values across calls; volatile functions are never executed during
@@ -30,57 +48,32 @@ OTHER CHANGES
 - add `Calculator#identifiers`, a purely syntactic listing of every
   identifier a formula could reference regardless of branching -- nothing
   is evaluated and stored variables are not subtracted (#197, #339)
-- operand type-mismatch parse errors now read as natural English: the parser
-  preserves the node-level message ("Dentaku::AST::Addition requires operands
-  that are numeric or compatible types, not string") instead of rebuilding a
-  misleading one ("requires incompatible operands, but got string"); the
-  metadata-derived fallback message says "compatible" rather than
-  "incompatible" (idea from #341, thanks @moskvin)
-
-## [v4.0.0.pre] 2026-07-06
-BREAKING CHANGES
-- require Ruby 3.2 or newer
-- `Calculator.new` takes keyword arguments; the AST cache must now be passed
-  explicitly via `ast_cache:` instead of as leftover options, unknown options
-  raise `ArgumentError`, and the passed values are no longer mutated
-- `Dentaku::Error` is now a module included by all Dentaku exceptions, so
-  `rescue Dentaku::Error` also catches `Dentaku::ArgumentError` and
-  `Dentaku::ZeroDivisionError`; exceptions that previously subclassed
-  `Dentaku::Error` now subclass `Dentaku::BaseError`
-- `TokenMatcher` no longer builds function matchers via `method_missing`; use
-  `TokenMatcher.function(name)` (the unused `math_neg_pow` / `math_neg_mul`
-  matcher symbols were removed)
-- remove Travis CI configuration
-- `AND` / `OR` short-circuit: an unbound variable no longer raises when the
-  bound operand already decides the result (#234); formulas are documented
-  as pure, and misspelled identifiers on never-taken branches are no longer
-  reported at evaluation time (use `dependencies` for static validation)
-- indexing into a non-indexable value (e.g. `a[0]` where `a` is a number,
-  `NULL`, or a boolean) now raises `Dentaku::ArgumentError` instead of
-  silently returning a bit-reference result or leaking a raw Ruby
-  `NoMethodError`; an incompatible index type (e.g. a string index into an
-  array) raises `Dentaku::ArgumentError` instead of a raw `TypeError`
-
-OTHER CHANGES
-- document Ruby compatibility policy
 - cache flags can be set per calculator (`cache_ast:`,
   `cache_dependency_order:`), defaulting to the module-level settings
 - module-level `Dentaku.aliases` is resolved lazily, so aliases set after a
   calculator was created (including the implicit top-level calculator) apply
 - `CASE` expressions only report dependencies for the branch that would be
   taken when the switch value is resolvable
+- operand type-mismatch parse errors now read as natural English: the parser
+  preserves the node-level message ("Dentaku::AST::Addition requires operands
+  that are numeric or compatible types, not string") instead of rebuilding a
+  misleading one ("requires incompatible operands, but got string"); the
+  metadata-derived fallback message says "compatible" rather than
+  "incompatible" (idea from #341, thanks @moskvin)
+- `Dentaku::ArgumentError`, `ParseError`, and `TokenizerError` build their own
+  default messages from `reason` and `meta` (existing message text is
+  unchanged); `Parser#fail!` and `Tokenizer#fail!` reduce to one-liners
 - fix parsing of `CASE` statements with an unparenthesized operation as the
   switch expression (`CASE a % 5 WHEN ...`), which also makes `PrintVisitor`
   output for such statements re-parseable
 - fix `recipient_variable` being nil inside `solve` blocks, a regression
   introduced in 3.5.4 (#333)
-- `ParseError` and `TokenizerError` now build their own default messages from
-  `reason` and `meta` (message text is unchanged); `Parser#fail!` and
-  `Tokenizer#fail!` reduce to one-liners
 - fix crashes on two error paths: the parser's unbalanced-parenthesis report
   raised a Ruby `ArgumentError` instead of a `ParseError`, and the tokenizer's
   zero-width-match report raised a `KeyError` instead of a `TokenizerError`
+- document Ruby compatibility policy
 - modernize low-risk Ruby syntax
+- remove Travis CI configuration
 
 ## [v3.5.8] 2026-08-01
 - unify numeric matching and parsing
