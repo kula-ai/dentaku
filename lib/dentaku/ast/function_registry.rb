@@ -11,7 +11,7 @@ module Dentaku
       def register(name, type, implementation, callback = nil)
         function = Class.new(Function) do
           def self.name=(name)
-            @name = name
+            @name = name.to_s
           end
 
           def self.name

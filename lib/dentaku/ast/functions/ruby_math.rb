@@ -16,8 +16,11 @@ module Dentaku
         @implementation = Math.method(method)
       end
 
+      # Ruby documents Module#name as a String (or nil for anonymous
+      # classes), so expose one even though the function is registered
+      # under a Symbol
       def self.name
-        @name
+        @name.to_s
       end
 
       def self.arity

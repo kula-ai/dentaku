@@ -41,4 +41,15 @@ describe Dentaku::AST::Function do
     fn = described_class.new(1, 2, 3)
     expect(fn.args).to eq([1, 2, 3])
   end
+
+  describe "#name" do
+    it "is a String for functions registered with a Symbol" do
+      fn = described_class.register(:symbol_named, :numeric, ->(x) { x })
+      expect(fn.name).to eq("symbol_named")
+    end
+
+    it "is a String for functions imported from Ruby's Math module" do
+      expect(described_class.get("sqrt").name).to eq("sqrt")
+    end
+  end
 end
