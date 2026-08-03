@@ -177,9 +177,12 @@ describe Dentaku::AST::Arithmetic do
     let(:oversized) { "999999999999999 ^ 99999999999999" }
 
     it 'wraps the raw Ruby error so it is a Dentaku::Error' do
+      # Ruby 3.4+ raises ArgumentError('exponent is too large') and we pass its
+      # message through; older Rubies only warn and return Infinity, which the
+      # non-finite result guard turns into the equivalent Dentaku error.
       expect {
         Dentaku::Calculator.new.evaluate!(oversized)
-      }.to raise_error(Dentaku::ArgumentError, /exponent is too large/)
+      }.to raise_error(Dentaku::ArgumentError, /exponent is too large|is not a finite number/)
     end
 
     it 'is rescuable as Dentaku::Error' do
@@ -207,6 +210,17 @@ describe Dentaku::AST::Arithmetic do
 
     it 'still evaluates exponentiation that fits' do
       expect(Dentaku::Calculator.new.evaluate!("2 ^ 10")).to eq(1024)
+    end
+
+    it 'still evaluates large results that BigDecimal can represent' do
+      expect(Dentaku::Calculator.new.evaluate!("1e308 * 10")).to eq(BigDecimal("1e309"))
+    end
+
+    it 'leaves arithmetic alone when an operand is already infinite' do
+      calculator = Dentaku::Calculator.new
+
+      expect(calculator.evaluate!("a + 1", a: Float::INFINITY)).to be_infinite
+      expect(calculator.evaluate!("a * 2", a: Float::INFINITY)).to be_infinite
     end
 
     it 'does not swallow Dentaku errors raised by the operation itself' do

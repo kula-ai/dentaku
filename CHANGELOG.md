@@ -1,5 +1,15 @@
 # Change Log
 
+## [UNRELEASED] v4.0.2
+- the 4.0.1 guard against arithmetic that rejects a well-typed operand only
+  worked on Ruby 3.4+. Ruby 3.2 and 3.3 do not raise for an oversized
+  exponent: `Integer#**` warns and returns `Float::INFINITY`, so there was
+  nothing to rescue and `Infinity` still leaked out of the non-bang
+  `Calculator#evaluate` (#332). Arithmetic now also rejects a non-finite
+  result computed from finite operands, so `evaluate` returns `nil` and
+  `evaluate!` raises `Dentaku::ArgumentError` on every supported Ruby.
+  Operands that are already infinite are passed through unchanged.
+
 ## [v4.0.1] 2026-08-02
 - parsing no longer executes user functions. The three parse-time operand
   validators (`Arithmetic`, `Negation`, and the logical combinators) asked

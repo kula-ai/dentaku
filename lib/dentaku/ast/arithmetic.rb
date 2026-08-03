@@ -38,7 +38,7 @@ module Dentaku
         l = cast(left_value)
         r = cast(right_value)
 
-        begin
+        result = begin
           l.public_send(operator, r)
         rescue ::TypeError => e
           # Right cannot be converted to a suitable type for left. e.g. [] + 1
@@ -53,6 +53,27 @@ module Dentaku
           # promises to return nil rather than raise.
           raise Dentaku::ArgumentError.for(:invalid_value, actual: r), e.message
         end
+
+        validate_result(result, l, r)
+      end
+
+      # Not every Ruby rejects an operation it cannot carry out. Before 3.4,
+      # `Integer#**` with an oversized exponent warns and returns
+      # Float::INFINITY where 3.4+ raises ArgumentError, and overflowing float
+      # arithmetic is silently infinite on every version. Finite operands that
+      # produce a non-finite result mean the operation overflowed, so treat it
+      # as the same rejection newer Rubies raise -- otherwise Infinity leaks
+      # out of Calculator#evaluate, which promises nil on failure (#332).
+      def validate_result(result, l, r)
+        return result unless nonfinite?(result)
+        return result if nonfinite?(l) || nonfinite?(r)
+
+        raise Dentaku::ArgumentError.for(:invalid_value, actual: r),
+              "Result of #{l} #{operator} #{r} is not a finite number"
+      end
+
+      def nonfinite?(val)
+        val.is_a?(::Numeric) && val.respond_to?(:finite?) && !val.finite?
       end
 
       def cast(val)
