@@ -1076,5 +1076,84 @@ describe Dentaku::Calculator do
         called
       }.from(12).to(1)
     end
+
+    it 'does not carry cached identifier values across evaluations' do
+      # there is no public disable, so save/restore around the example
+      was_enabled = Dentaku.cache_identifier?
+      Dentaku.enable_identifier_cache!
+      called = 0
+      calculator.store_formula("A1", "B1+B1")
+      calculator.store_formula("B1", "C1")
+      calculator.store("C1", proc { called += 1; 1 })
+
+      calculator.evaluate("A1")
+      after_first = called
+      calculator.evaluate("A1")
+
+      expect(after_first).to be > 0
+      expect(called).to eq(after_first * 2)
+    ensure
+      Dentaku.instance_variable_set(:@enable_identifier_caching, was_enabled)
+    end
+  end
+
+  describe 'block-scoped store (#336)' do
+    it 'removes keys the block introduced' do
+      calculator.store(a: 1)
+      result = calculator.store(b: 2) { calculator.evaluate!("a + b") }
+
+      expect(result).to eq(3)
+      expect(calculator.memory.keys).to eq(["a"])
+    end
+
+    it 'restores keys the block shadowed' do
+      calculator.store(a: 1)
+      inner = calculator.store(a: 99) { calculator.evaluate!("a") }
+
+      expect(inner).to eq(99)
+      expect(calculator.evaluate!("a")).to eq(1)
+    end
+
+    it 'restores when the block raises' do
+      calculator.store(a: 1)
+
+      expect {
+        calculator.store(a: 99) { raise "boom" }
+      }.to raise_error("boom")
+
+      expect(calculator.evaluate!("a")).to eq(1)
+      expect(calculator.memory.keys).to eq(["a"])
+    end
+
+    it 'restores correctly when nested' do
+      calculator.store(a: 1)
+      innermost = calculator.store(a: 2) { calculator.store(a: 3) { calculator.evaluate!("a") } }
+
+      expect(innermost).to eq(3)
+      expect(calculator.evaluate!("a")).to eq(1)
+    end
+
+    it 'does not leak the internal evaluation mode key into memory' do
+      calculator.store(a: 1)
+      calculator.evaluate("a + 1")
+
+      expect(calculator.memory.keys).to eq(["a"])
+    end
+
+    it 'restores in place rather than copying the whole memory hash' do
+      # the old implementation snapshotted memory up front and reassigned
+      # @memory to the snapshot, so evaluation cost scaled with memory size.
+      # Restoring in place keeps the same hash object throughout.
+      was_enabled = Dentaku.cache_identifier?
+      Dentaku.instance_variable_set(:@enable_identifier_caching, false)
+
+      calculator.store(a: 1, b: 2)
+      before = calculator.memory.object_id
+
+      expect(calculator.evaluate!("a + b")).to eq(3)
+      expect(calculator.memory.object_id).to eq(before)
+    ensure
+      Dentaku.instance_variable_set(:@enable_identifier_caching, was_enabled)
+    end
   end
 end

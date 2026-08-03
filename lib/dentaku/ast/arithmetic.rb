@@ -38,10 +38,21 @@ module Dentaku
         l = cast(left_value)
         r = cast(right_value)
 
-        l.public_send(operator, r)
-      rescue ::TypeError => e
-        # Right cannot be converted to a suitable type for left. e.g. [] + 1
-        raise Dentaku::ArgumentError.for(:incompatible_type, actual: r, expected: l.class), e.message
+        begin
+          l.public_send(operator, r)
+        rescue ::TypeError => e
+          # Right cannot be converted to a suitable type for left. e.g. [] + 1
+          raise Dentaku::ArgumentError.for(:incompatible_type, actual: r, expected: l.class), e.message
+        rescue Dentaku::Error
+          # already one of ours (e.g. from arithmetic on a custom class)
+          raise
+        rescue ::ArgumentError, ::RangeError, ::FloatDomainError => e
+          # the operation itself rejected an otherwise well-typed operand,
+          # e.g. BigDecimal#** with an oversized exponent. Without this, a raw
+          # Ruby exception escapes the non-bang Calculator#evaluate, which
+          # promises to return nil rather than raise.
+          raise Dentaku::ArgumentError.for(:invalid_value, actual: r), e.message
+        end
       end
 
       def cast(val)

@@ -347,6 +347,42 @@ function)
 Functions can be added individually using Calculator#add_function, or en masse
 using Calculator#add_functions.
 
+### The return type argument
+
+The second argument is the function's *declared* return type.  It is used at
+parse time to decide whether a call to the function is a valid operand of an
+arithmetic operator -- only `:numeric`, `:integer`, `:array`, and `nil` are
+accepted there.  Declaring anything else means the function cannot be used in
+arithmetic:
+
+```ruby
+> c = Dentaku::Calculator.new
+> c.add_function(:label, :string, ->(x) { "item#{x}" })
+> c.evaluate!('label(1)')
+#=> "item1"
+> c.evaluate!("label(1) = 'item1'")     # comparison: type is not consulted
+#=> true
+> c.evaluate!('label(1) + 1')           # arithmetic: rejected at parse time
+#=> Dentaku::ParseError: Dentaku::AST::Addition requires operands that are
+#   numeric or compatible types, not string
+```
+
+The type is a declaration, not a guarantee: Dentaku does not coerce the return
+value and does not check it at runtime.  Declaring `:numeric` for a function
+that actually returns a String defers the failure to whatever consumes it:
+
+```ruby
+> c.add_function(:mislabeled, :numeric, ->(x) { "item#{x}" })
+> c.evaluate!('mislabeled(1) + 1')
+#=> Dentaku::ArgumentError: String input 'item1' is not coercible to numeric
+```
+
+So the type only has an observable effect when the result feeds an arithmetic
+operator.  A function used standalone, in comparisons, or as a function
+argument behaves the same whatever type is declared -- which is why an
+incorrect type can go unnoticed for a long time.  Declare the type your lambda
+actually returns.
+
 Dentaku assumes registered functions are pure (see DEPENDENCY ANALYSIS AND
 SHORT-CIRCUITING above).  A function that reads external state, performs
 I/O, or returns different values across calls must be declared volatile so

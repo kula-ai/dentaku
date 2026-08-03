@@ -1,5 +1,29 @@
 # Change Log
 
+## [UNRELEASED] v4.0.1
+- functions registered under a name that another calculator already registered
+  no longer render as `#<Class:0x...>` in error messages; every generated
+  function class now has a stable `to_s` of
+  `Dentaku::AST::Function::<Name>` (#264)
+- arithmetic operations that reject an otherwise well-typed operand (notably
+  `^` with an oversized exponent) now raise `Dentaku::ArgumentError` instead of
+  leaking a raw Ruby `ArgumentError`, so the non-bang `Calculator#evaluate`
+  returns `nil` as documented rather than raising (#332)
+- `Calculator#store` restores only the keys it set instead of snapshotting the
+  whole memory hash, so evaluation cost no longer scales with the number of
+  stored variables (#336). Measured on 20k evaluations of a two-variable
+  formula: 34.5 -> 18.6 us/eval with 20,000 variables in memory, and flat
+  across memory sizes. Block-scoping semantics are unchanged; when the
+  identifier cache is enabled the previous whole-hash snapshot is still used,
+  because evaluation writes into memory in that mode.
+- document what the `add_function` return type argument actually does: it is
+  consulted at parse time to decide whether a call is a valid arithmetic
+  operand, is never coerced or checked at runtime, and has no observable
+  effect outside arithmetic (#303)
+- the test suite no longer depends on example ordering: the module-level
+  caching opt-ins are reset before each example, since they have no public
+  disable and leaked between examples
+
 ## [v4.0.0] 2026-08-01
 BREAKING CHANGES
 - require Ruby 3.2 or newer

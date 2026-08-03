@@ -123,6 +123,49 @@ describe Dentaku::AST::Arithmetic do
     expect { add(x, one, 'x' => [1]) }.to raise_error(Dentaku::ArgumentError)
   end
 
+  describe 'operations that reject well-typed operands (#332)' do
+    let(:oversized) { "999999999999999 ^ 99999999999999" }
+
+    it 'wraps the raw Ruby error so it is a Dentaku::Error' do
+      expect {
+        Dentaku::Calculator.new.evaluate!(oversized)
+      }.to raise_error(Dentaku::ArgumentError, /exponent is too large/)
+    end
+
+    it 'is rescuable as Dentaku::Error' do
+      error = begin
+        Dentaku::Calculator.new.evaluate!(oversized)
+        nil
+      rescue Dentaku::Error => e
+        e
+      end
+
+      expect(error).to be_a(Dentaku::ArgumentError)
+    end
+
+    it 'returns nil from the non-bang evaluate rather than raising' do
+      expect(Dentaku::Calculator.new.evaluate(oversized)).to be_nil
+      expect(Dentaku::Calculator.new.evaluate("2 ^ 99999999999")).to be_nil
+    end
+
+    it 'yields to the block form' do
+      handled = nil
+      Dentaku::Calculator.new.evaluate(oversized) { |_expr, ex| handled = ex }
+
+      expect(handled).to be_a(Dentaku::ArgumentError)
+    end
+
+    it 'still evaluates exponentiation that fits' do
+      expect(Dentaku::Calculator.new.evaluate!("2 ^ 10")).to eq(1024)
+    end
+
+    it 'does not swallow Dentaku errors raised by the operation itself' do
+      expect {
+        Dentaku::Calculator.new.evaluate!("1 / 0")
+      }.to raise_error(Dentaku::ZeroDivisionError)
+    end
+  end
+
   private
 
   def add(left, right, context = ctx)

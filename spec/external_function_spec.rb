@@ -109,6 +109,7 @@ describe Dentaku::Calculator do
       end
 
       it 'exposes the `callback` method of a function' do
+        custom_calculator # the `let` is lazy, and it is what registers the function
         expect(Dentaku::AST::Function::Callback_lambda.callback.call()).to eq("lambda executed")
       end
 
@@ -153,6 +154,38 @@ describe Dentaku::Calculator do
       expect {
         described_class.new.evaluate!("1 + my_function(2)")
       }.to raise_error(Dentaku::ParseError)
+    end
+
+    describe 'error messages (#264)' do
+      it 'names the function even when another calculator claimed the constant' do
+        messages = 2.times.map do
+          calculator = described_class.new
+          calculator.add_function(:custom, :integer, -> { 1 })
+
+          begin
+            calculator.ast("CUSTOM(1,2)")
+            nil
+          rescue Dentaku::ParseError => e
+            e.message
+          end
+        end
+
+        expect(messages).to all(include("Dentaku::AST::Function::Custom"))
+        messages.each { |message| expect(message).not_to include("#<Class:") }
+      end
+
+      it 'gives re-registered functions a stable string representation' do
+        first = described_class.new
+        first.add_function(:repeated, :numeric, ->(x) { x })
+        second = described_class.new
+        second.add_function(:repeated, :numeric, ->(x) { x * 2 })
+
+        registry = ->(c) { c.instance_variable_get(:@function_registry).get("repeated") }
+
+        expect(registry.call(second).to_s).to eq("Dentaku::AST::Function::Repeated")
+        expect(registry.call(second).to_s).to eq(registry.call(first).to_s)
+        expect(registry.call(second).name).to eq("repeated")
+      end
     end
 
     describe 'Dentaku::Calculator.add_function' do

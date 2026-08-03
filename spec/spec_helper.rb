@@ -20,6 +20,15 @@ RSpec.configure do |c|
       Dentaku.aliases = { roundup: ['roundupup'] }
     end
   }
+
+  # the caching opt-ins are module-level and have no public "disable", so an
+  # example that turns one on leaks into every example that runs after it.
+  # Reset to the documented defaults so the suite does not depend on order.
+  c.before(:each) {
+    Dentaku.instance_variable_set(:@enable_ast_caching, false)
+    Dentaku.instance_variable_set(:@enable_dependency_order_caching, false)
+    Dentaku.instance_variable_set(:@enable_identifier_caching, false)
+  }
 end
 
 # automatically create a token stream from bare values

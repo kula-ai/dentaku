@@ -102,7 +102,9 @@ module Dentaku
     end
 
     def dependencies(expression, context = {})
-      test_context = context.nil? ? {} : store(context) { memory }
+      # dup inside the block: `store` now restores in place, so the caller
+      # needs its own copy of the merged context rather than the live memory
+      test_context = context.nil? ? {} : store(context) { memory.dup }
 
       case expression
       when Dentaku::AST::Node
@@ -169,31 +171,50 @@ module Dentaku
     end
 
     def store(key_or_hash, value = nil)
-      restore = Hash[memory]
+      pairs = pairs_to_store(key_or_hash, value)
 
-      if value.nil?
-        key_or_hash = FlatHash.from_hash_with_intermediates(key_or_hash) if nested_data_support
-        key_or_hash.each do |key, val|
-          memory[standardize_case(key.to_s)] = val
+      unless block_given?
+        pairs.each { |key, val| memory[key] = val }
+        return self
+      end
+
+      # `evaluate!` routes every call through here, so snapshotting the whole
+      # memory hash makes each evaluation scale with the number of stored
+      # variables (#336). Undoing just the keys this call touched is O(pairs)
+      # instead of O(memory) -- but it is only equivalent while nothing else
+      # writes into memory during the block. The identifier cache does exactly
+      # that, so when it is enabled we still need the wholesale snapshot to
+      # keep cached values scoped to a single evaluation.
+      if Dentaku.cache_identifier?
+        restore = Hash[memory]
+        pairs.each { |key, val| memory[key] = val }
+
+        begin
+          yield
+        ensure
+          @memory = restore
         end
       else
-        memory[standardize_case(key_or_hash.to_s)] = value
-      end
+        undo = pairs.map { |key, _| [key, memory.key?(key), memory[key]] }
+        pairs.each { |key, val| memory[key] = val }
 
-      if block_given?
         begin
-          result = yield
-          @memory = restore
-          return result
-        rescue => e
-          @memory = restore
-          raise e
+          yield
+        ensure
+          undo.each { |key, present, val| present ? memory[key] = val : memory.delete(key) }
         end
       end
-
-      self
     end
     alias_method :bind, :store
+
+    private def pairs_to_store(key_or_hash, value)
+      if value.nil?
+        key_or_hash = FlatHash.from_hash_with_intermediates(key_or_hash) if nested_data_support
+        key_or_hash.map { |key, val| [standardize_case(key.to_s), val] }
+      else
+        [[standardize_case(key_or_hash.to_s), value]]
+      end
+    end
 
     def store_formula(key, formula)
       store(key, ast(formula))

@@ -18,6 +18,21 @@ module Dentaku
             @name
           end
 
+          # only the first registration of a given name claims the constant
+          # under Dentaku::AST::Function, so later ones stay anonymous and
+          # would otherwise render as "#<Class:0x...>" in error messages
+          def self.display_name=(display_name)
+            @display_name = display_name
+          end
+
+          def self.to_s
+            @display_name || super
+          end
+
+          def self.inspect
+            to_s
+          end
+
           def self.implementation=(impl)
             @implementation = impl
           end
@@ -72,9 +87,11 @@ module Dentaku
           end
         end
 
+        function.name = name
+        function.display_name = "#{Function}::#{normalize_name(name)}"
+
         define_class(name, function)
 
-        function.name = name
         function.type = type
         function.implementation = implementation
         function.callback = callback
