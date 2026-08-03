@@ -1,6 +1,6 @@
 # Change Log
 
-## [UNRELEASED] v4.0.1
+## [v4.0.1] 2026-08-02
 - parsing no longer executes user functions. The three parse-time operand
   validators (`Arithmetic`, `Negation`, and the logical combinators) asked
   each operand for its dependencies without static mode, which evaluates
