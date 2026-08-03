@@ -51,8 +51,10 @@ module Dentaku
         @node.pure?
       end
 
+      # static dependency check: this runs at parse time, and evaluating
+      # short-circuit guards here would execute user functions (#197)
       def valid_node?(node)
-        node && (node.dependencies.any? || node.type == :numeric)
+        node && (node.dependencies(Node::STATIC_CONTEXT).any? || node.type == :numeric)
       end
     end
   end

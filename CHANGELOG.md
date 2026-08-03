@@ -1,6 +1,16 @@
 # Change Log
 
 ## [UNRELEASED] v4.0.1
+- parsing no longer executes user functions. The three parse-time operand
+  validators (`Arithmetic`, `Negation`, and the logical combinators) asked
+  each operand for its dependencies without static mode, which evaluates
+  short-circuit guards -- so an `IF` or `CASE` used as an operand ran its
+  predicate while the parser was still building the node. `Calculator#ast`
+  and `Calculator#identifiers` could therefore raise from inside a
+  user-registered function, contrary to the documented contract that
+  `identifiers` never evaluates guards or functions (#197). Regression
+  introduced in 3.5.6 (ecd46bf); evaluation and short-circuiting during
+  `evaluate`/`dependencies` are unchanged.
 - functions registered under a name that another calculator already registered
   no longer render as `#<Class:0x...>` in error messages; every generated
   function class now has a stable `to_s` of

@@ -123,6 +123,56 @@ describe Dentaku::AST::Arithmetic do
     expect { add(x, one, 'x' => [1]) }.to raise_error(Dentaku::ArgumentError)
   end
 
+  describe 'parse-time operand validation (#197)' do
+    let(:calculator) do
+      Dentaku::Calculator.new.tap do |c|
+        c.add_function(:explode, :numeric, ->(*) { raise "function executed at parse time" })
+        c.add_function(:explode_flag, :logical, ->(*) { raise "function executed at parse time" })
+      end
+    end
+
+    it 'does not execute functions when an IF is an arithmetic operand' do
+      expect {
+        calculator.ast("IF(explode(1) = 1, 1, 2) + category")
+      }.not_to raise_error
+    end
+
+    it 'does not execute functions when an IF is negated' do
+      expect {
+        calculator.ast("-IF(explode(1) = 1, 1, 2)")
+      }.not_to raise_error
+    end
+
+    it 'does not execute functions when an IF is a combinator operand' do
+      expect {
+        calculator.ast("IF(explode_flag(), true, false) AND x")
+      }.not_to raise_error
+    end
+
+    it 'does not execute functions when a CASE is an arithmetic operand' do
+      expect {
+        calculator.ast("(CASE explode(1) WHEN 1 THEN 1 ELSE 2 END) + category")
+      }.not_to raise_error
+    end
+
+    it 'reports identifiers across both branches without evaluating' do
+      expect(calculator.identifiers("IF(explode(1) = 1, 1, 2) + category")).to eq(["category"])
+    end
+
+    it 'still validates operand types' do
+      expect { Dentaku::Calculator.new.ast("'abc' + 1") }.to raise_error(Dentaku::ParseError)
+    end
+
+    it 'leaves evaluation and short-circuiting unchanged' do
+      plain = Dentaku::Calculator.new
+
+      expect(plain.evaluate!("IF(a = 1, 10, 20) + 5", a: 1)).to eq(15)
+      expect(plain.evaluate!("IF(a = 1, 10, 20) + 5", a: 2)).to eq(25)
+      expect(plain.evaluate!("-IF(a = 1, 10, 20)", a: 1)).to eq(-10)
+      expect(plain.dependencies("IF(a, b, c)", a: true)).to eq(["b"])
+    end
+  end
+
   describe 'operations that reject well-typed operands (#332)' do
     let(:oversized) { "999999999999999 ^ 99999999999999" }
 

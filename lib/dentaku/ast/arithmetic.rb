@@ -77,8 +77,11 @@ module Dentaku
       def valid_node?(node)
         return false unless node
 
-        # Allow nodes with dependencies (identifiers that will be resolved later)
-        return true if node.dependencies.any?
+        # Allow nodes with dependencies (identifiers that will be resolved later).
+        # Ask statically: this runs while the parser is building the node, and
+        # a non-static dependency check evaluates short-circuit guards, which
+        # would execute user functions at parse time (#197).
+        return true if node.dependencies(Node::STATIC_CONTEXT).any?
 
         # Allow compatible types
         return true if [:numeric, :integer, :array].include?(node.type)
