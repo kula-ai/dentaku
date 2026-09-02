@@ -78,8 +78,10 @@ module Kula
 
       private
 
+      # Through the calculator, not a bare parser: the parser needs the function
+      # registry to know that ceiling() and the rest exist.
       def parse(stored)
-        ::Dentaku::Parser.new(::Dentaku::Tokenizer.new.tokenize(stored)).parse
+        calculator.ast(stored)
       end
 
       def tokenizer_diagnostics(error)
