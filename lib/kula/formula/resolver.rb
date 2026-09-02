@@ -104,17 +104,17 @@ module Kula
         @by_handle[handle]
       end
 
+      # Blanks out quoted text so nothing inside it is read as syntax. Replaced
+      # with spaces rather than removed so offsets do not shift for anything
+      # downstream.
+      def self.outside_literals(text)
+        text.to_s.gsub(LITERAL_PATTERN) { |literal| " " * literal.length }
+      end
+
       private
 
       def handles(stored)
-        outside_literals(stored).scan(HANDLE_PATTERN).flatten.uniq
-      end
-
-      # Blanks out quoted text so a handle-shaped word inside it is never read as
-      # a reference. Replaced with a space rather than removed so offsets do not
-      # shift for anything downstream.
-      def outside_literals(text)
-        text.to_s.gsub(LITERAL_PATTERN) { |literal| " " * literal.length }
+        self.class.outside_literals(stored).scan(HANDLE_PATTERN).flatten.uniq
       end
 
       def literal?(match)

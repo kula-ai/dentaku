@@ -35,6 +35,10 @@ RSpec.describe Kula::Formula::Limits do
     it "allows exactly the cap" do
       expect(codes("{a} + {b}", max_references: 2)).to be_empty
     end
+
+    it "does not count a brace inside a string literal" do
+      expect(codes(%{equaltext({a}, "{b}")}, max_references: 1)).to be_empty
+    end
   end
 
   describe "nesting" do
@@ -52,6 +56,11 @@ RSpec.describe Kula::Formula::Limits do
     it "measures the deepest point, not the final balance" do
       expect(codes("((1)) + ((2))", max_nesting: 1))
         .to eq([Kula::Formula::Errors::TOO_DEEPLY_NESTED])
+    end
+
+    # A bracket inside quoted text is data, not nesting.
+    it "ignores parentheses inside a string literal" do
+      expect(codes(%{equaltext(a, "((((((")}, max_nesting: 2)).to be_empty
     end
 
     it "does not go negative on unbalanced closers" do

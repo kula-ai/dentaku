@@ -33,10 +33,11 @@ module Kula
 
         found << over(Errors::TOO_LONG, text.length, :max_length) if text.length > @budget[:max_length]
 
-        references = text.scan(Resolver::TOKEN_PATTERN).size
+        countable = Resolver.outside_literals(text)
+        references = countable.scan(Resolver::TOKEN_PATTERN).size
         found << over(Errors::TOO_MANY_REFERENCES, references, :max_references) if references > @budget[:max_references]
 
-        depth = max_depth(text)
+        depth = max_depth(countable)
         found << over(Errors::TOO_DEEPLY_NESTED, depth, :max_nesting) if depth > @budget[:max_nesting]
 
         found
@@ -48,8 +49,10 @@ module Kula
         Diagnostic.new(code: code, detail: {limit: @budget[key], actual: actual})
       end
 
-      # Counted on the raw source rather than the AST: the point is to reject
-      # before parsing, and a parser blows its stack on deep nesting.
+      # Counted on the source rather than the AST: the point is to reject before
+      # parsing, and a parser blows its stack on deep nesting. Quoted text is
+      # masked out first — a bracket an author typed inside a string is data, and
+      # counting it rejects a formula that nests nothing.
       def max_depth(text)
         depth = 0
         deepest = 0
