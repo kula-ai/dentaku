@@ -1,6 +1,7 @@
 require 'dentaku/token'
 require 'dentaku/token_matcher'
 require 'dentaku/token_scanner'
+require 'dentaku/chain_rewriter'
 
 module Dentaku
   class Tokenizer
@@ -11,6 +12,8 @@ module Dentaku
 
     def tokenize(string, options = {})
       @nesting = 0
+      @offset  = 0
+      @errors  = []
       @tokens  = []
       @aliases = options.fetch(:aliases, global_aliases)
       input    = strip_comments(string.to_s.dup)
@@ -28,13 +31,18 @@ module Dentaku
         end
 
         unless scanned
-          fail! :parse_error, at: input
+          # Collect and step over the bad character instead of raising, so the
+          # editor can underline every mistake at once rather than one per save.
+          @errors << {position: @offset, character: input[0]}
+          @offset += 1
+          input = input[1..-1] || ""
         end
       end
 
+      fail! :lexical_errors, errors: @errors if @errors.any?
       fail! :too_many_opening_parentheses if @nesting > 0
 
-      @tokens
+      ChainRewriter.rewrite(@tokens)
     end
 
     def last_token
@@ -53,6 +61,8 @@ module Dentaku
           @nesting -= 1 if RPAREN == token
           fail! :too_many_closing_parentheses if @nesting < 0
 
+          token.position = @offset
+          @offset += token.length
           @tokens << token unless token.is?(:whitespace)
         end
 
@@ -98,6 +108,8 @@ module Dentaku
         case reason
         when :parse_error
           "parse error at: '#{meta.fetch(:at)}'"
+        when :lexical_errors
+          "invalid characters: " + meta.fetch(:errors).map { |e| e[:character] }.join(", ")
         when :too_many_opening_parentheses
           "too many opening parentheses"
         when :too_many_closing_parentheses

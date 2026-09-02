@@ -1,6 +1,7 @@
 module Dentaku
   class Token
     attr_reader :category, :raw_value, :value
+    attr_accessor :position
 
     def initialize(category, value, raw_value = nil)
       @category  = category

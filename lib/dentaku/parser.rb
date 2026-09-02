@@ -89,6 +89,7 @@ module Dentaku
         end
 
         token = input[i]
+        @last_position = token.position if token.respond_to?(:position)
         lookahead = input[i + 1]
         process_token(token, lookahead, i)
         i += 1
@@ -308,10 +309,15 @@ module Dentaku
           "Not implemented for tokens of category #{meta.fetch(:token_category)}"
         when :invalid_statement
           "Invalid statement"
+        when :orphan_else
+          "else without a matching if"
         else
           raise ::ArgumentError, "Unhandled #{reason}"
         end
 
+      # Every parse error carries a character offset; sites holding the offending
+      # token pass their own, the rest fall back to the last token consumed.
+      meta = {position: @last_position}.merge(meta)
       raise ParseError.for(reason, **meta), message
     end
   end

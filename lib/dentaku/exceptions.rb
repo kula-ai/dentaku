@@ -44,6 +44,7 @@ module Dentaku
       node_invalid too_few_operands too_many_operands undefined_function
       unprocessed_token unknown_case_token unbalanced_bracket
       unbalanced_parenthesis unknown_grouping_token not_implemented_token_category
+      orphan_else
       invalid_statement
     ].freeze
 
@@ -59,6 +60,11 @@ module Dentaku
   class TokenizerError < Error
     attr_reader :reason, :meta
 
+    # Every bad character found in one pass: [{position:, character:}, ...].
+    def errors
+      meta[:errors] || [{position: meta[:position], character: meta[:at]}]
+    end
+
     def initialize(reason, **meta)
       @reason = reason
       @meta = meta
@@ -68,6 +74,7 @@ module Dentaku
 
     VALID_REASONS = %i[
       parse_error
+      lexical_errors
       too_many_closing_parentheses
       too_many_opening_parentheses
       unexpected_zero_width_match

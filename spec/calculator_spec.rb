@@ -134,7 +134,13 @@ describe Dentaku::Calculator do
     end
 
     it 'raises argument error if a function is called with incorrect arity' do
-      expect { calculator.evaluate!('IF(a,b)', a: 1, b: 1) }.to raise_error(Dentaku::ParseError)
+      expect { calculator.evaluate!('ROUND()') }.to raise_error(Dentaku::ParseError)
+    end
+
+    # Kula fork: two-arg IF is valid and yields nil when the predicate is false.
+    it 'accepts a two-arg IF, returning nil when false' do
+      expect(calculator.evaluate!('IF(a > b, b)', a: 2, b: 1)).to eq(1)
+      expect(calculator.evaluate!('IF(a < b, b)', a: 2, b: 1)).to be_nil
     end
   end
 

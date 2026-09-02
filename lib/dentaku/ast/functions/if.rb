@@ -5,15 +5,16 @@ module Dentaku
     class If < Function
       attr_reader :predicate, :left, :right
 
+      # R-1: two-arg if(condition, value) is valid and yields nil when false.
       def self.min_param_count
-        3
+        2
       end
 
       def self.max_param_count
         3
       end
 
-      def initialize(predicate, left, right)
+      def initialize(predicate, left, right = Nil.new)
         @predicate = predicate
         @left      = left
         @right     = right
