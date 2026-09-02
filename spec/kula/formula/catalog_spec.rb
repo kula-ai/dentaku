@@ -86,11 +86,18 @@ RSpec.describe Kula::Formula::Catalog do
 
       # Integer division on seconds floors toward -infinity, which made these
       # disagree for any sub-day gap.
-      it "is symmetric" do
-        forward = calculator.evaluate!(%{datediff(#{later}, #{earlier}, "days")})
-        backward = calculator.evaluate!(%{datediff(#{earlier}, #{later}, "days")})
+      # Integer division floors toward -infinity and the month adjustment always
+      # rounds toward the past, so every unit had to be checked, not just days.
+      it "is symmetric in every unit" do
+        a = Time.utc(2026, 3, 15).to_i
+        b = Time.utc(2026, 1, 10).to_i
 
-        expect(forward).to eq(-backward)
+        %w[days weeks months years].each do |unit|
+          forward = calculator.evaluate!(%{datediff(#{a}, #{b}, "#{unit}")})
+          backward = calculator.evaluate!(%{datediff(#{b}, #{a}, "#{unit}")})
+
+          expect(forward).to eq(-backward), "#{unit}: #{forward} vs #{backward}"
+        end
       end
 
       it "measures weeks, months and years" do
@@ -161,6 +168,16 @@ RSpec.describe Kula::Formula::Catalog do
 
     it "does not treat two unanswered fields as equal" do
       expect(calculator.evaluate!("equaltext(a, b)", "a" => nil, "b" => nil)).to be_nil
+    end
+  end
+
+  # Dentaku parses the infix forms as operators but the call forms as functions;
+  # rejecting not(x) while accepting `a and b` would be an arbitrary split.
+  describe "the logical surface" do
+    it "accepts and, or and not in call form" do
+      expect(calculator.evaluate!("not(1 > 2)")).to be true
+      expect(calculator.evaluate!("and(1 > 0, 2 > 1)")).to be true
+      expect(calculator.evaluate!("or(1 > 2, 2 > 1)")).to be true
     end
   end
 

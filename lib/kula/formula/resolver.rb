@@ -21,6 +21,9 @@ module Kula
 
       TOKEN_PATTERN = /\{([^{}]+)\}/
       HANDLE_PATTERN = /\b([a-z]_[a-zA-Z0-9_]+)\b/
+      # The same shape anchored, for validating a reference rather than scanning
+      # a formula for one.
+      EXACT_HANDLE = /\A[a-z]_[a-zA-Z0-9_]+\z/
       # Text between quotes is data, not syntax: a brace or a handle-shaped word
       # inside it must survive rewriting untouched and must never become a
       # dependency.
@@ -38,6 +41,18 @@ module Kula
         end
       end
 
+      # Raised when a reference cannot be used as written. Each of these is a
+      # caller mistake that would otherwise surface as a formula silently reading
+      # the wrong field, or no field at all.
+      class InvalidReference < StandardError
+        attr_reader :reference
+
+        def initialize(reference, reason)
+          @reference = reference
+          super(reason)
+        end
+      end
+
       # Raised when two references normalise to the same token. Silently keeping
       # the last would make {Base salary} resolve to whichever the caller happened
       # to pass second, with no error and a formula reading the wrong field.
@@ -52,13 +67,19 @@ module Kula
 
       def initialize(references)
         @references = references.to_a
+        @references.each { |reference| validate_reference!(reference) }
+
         @by_token = @references.each_with_object({}) do |ref, acc|
           key = normalize(ref.token)
           raise AmbiguousToken.new(ref.token) if acc.key?(key)
 
           acc[key] = ref
         end
-        @by_handle = @references.each_with_object({}) { |ref, acc| acc[ref.handle] = ref }
+        @by_handle = @references.each_with_object({}) do |ref, acc|
+          raise InvalidReference.new(ref, "more than one field uses handle #{ref.handle.inspect}") if acc.key?(ref.handle)
+
+          acc[ref.handle] = ref
+        end
       end
 
       attr_reader :references
@@ -112,6 +133,21 @@ module Kula
       end
 
       private
+
+      # A handle the scanner cannot see is worse than a rejected one: the rewrite
+      # still substitutes it, so the formula stores a reference that reports no
+      # dependency and evaluates against nothing. A name containing a brace is
+      # equally unusable, since to_display would produce something to_storage
+      # cannot read back.
+      def validate_reference!(reference)
+        unless reference.handle.to_s.match?(EXACT_HANDLE)
+          raise InvalidReference.new(reference, "handle #{reference.handle.inspect} is not a usable reference")
+        end
+
+        if reference.token.to_s.match?(/[{}]/)
+          raise InvalidReference.new(reference, "field name #{reference.token.inspect} cannot contain braces")
+        end
+      end
 
       def handles(stored)
         self.class.outside_literals(stored).scan(HANDLE_PATTERN).flatten.uniq

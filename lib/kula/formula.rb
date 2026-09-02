@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "kula/formula/ast_walk"
 require "kula/formula/catalog"
 require "kula/formula/compiler"
 require "kula/formula/dependency_graph"

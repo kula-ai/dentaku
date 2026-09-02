@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "dentaku"
+require "kula/formula/ast_walk"
 require "kula/formula/catalog"
 require "kula/formula/dependency_graph"
 require "kula/formula/errors"
@@ -59,11 +60,11 @@ module Kula
         Result.failure(source, Diagnostic.new(code: Errors::SYNTAX, detail: {message: e.message}))
       end
 
-      # Evaluates an already-compiled formula. Returns nil rather than raising
-      # when a value it reads is missing — a formula over an unanswered field is
-      # "not computable yet", not an error.
+      # Evaluates an already-compiled formula, discarding why it could not.
+      # Prefer evaluate!, which distinguishes "waiting on a value" from "this
+      # formula is broken" — they need different things said to the author.
       def evaluate(stored, context = {})
-        calculator.evaluate(stored, context)
+        evaluate!(stored, context).first
       end
 
       # Same, but reports why it could not compute.
@@ -86,11 +87,6 @@ module Kula
 
       def calculator
         @calculator ||= Catalog.install(::Dentaku::Calculator.new, zone: @zone)
-      end
-
-      # The graph over a whole scope, for cycle and ordering checks.
-      def graph(edges, **options)
-        DependencyGraph.new(edges, **options)
       end
 
       private
@@ -121,25 +117,12 @@ module Kula
           .map { |name| Diagnostic.new(code: Errors::UNKNOWN_FUNCTION, detail: {function: name}) }
       end
 
-      def function_names(node, found = [])
-        return found if node.nil?
-
-        if node.is_a?(::Dentaku::AST::Function)
-          found << node.class.name.to_s.split("::").last.downcase
+      def function_names(node)
+        found = []
+        AstWalk.each_node(node) do |current|
+          found << current.class.name.to_s.split("::").last.downcase if current.is_a?(::Dentaku::AST::Function)
         end
-
-        node_children(node).each { |child| function_names(child, found) }
         found
-      end
-
-      def node_children(node)
-        if node.respond_to?(:args) && node.args
-          Array(node.args)
-        elsif node.respond_to?(:left)
-          [node.left, (node.right if node.respond_to?(:right))].compact
-        else
-          []
-        end
       end
 
       # A mistyped function name is not a syntax error, and the parser already

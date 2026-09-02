@@ -34,7 +34,10 @@ module Kula
         found << over(Errors::TOO_LONG, text.length, :max_length) if text.length > @budget[:max_length]
 
         countable = Resolver.outside_literals(text)
-        references = countable.scan(Resolver::TOKEN_PATTERN).size
+        # Both notations count: an author types {Token}, an API client may submit
+        # the handle form it was given, and the cap has to mean the same for each.
+        references = countable.scan(Resolver::TOKEN_PATTERN).size +
+          countable.scan(Resolver::HANDLE_PATTERN).size
         found << over(Errors::TOO_MANY_REFERENCES, references, :max_references) if references > @budget[:max_references]
 
         depth = max_depth(countable)

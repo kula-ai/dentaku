@@ -39,8 +39,10 @@ RSpec.describe Kula::Formula::TypeChecker do
       expect(type_of(%{if(1 > 0, f_str, "x")})).to eq(:string)
     end
 
-    it "gives no type when a conditional's branches disagree" do
-      expect(type_of(%{if(1 > 0, f_num, "x")})).to be_nil
+    # Distinct from nil: an unknown type is allowed through, so collapsing the two
+    # would let a mixed-branch conditional satisfy any expected type.
+    it "reports a conflict when a conditional's branches disagree" do
+      expect(type_of(%{if(1 > 0, f_num, "x")})).to eq(described_class::CONFLICT)
     end
 
     it "reads a function's declared type" do
@@ -71,6 +73,20 @@ RSpec.describe Kula::Formula::TypeChecker do
       result = checker.check(calculator.ast("f_num + 1"), expected: :string)
 
       expect(result.map(&:code)).to eq([Kula::Formula::Errors::RESULT_TYPE_MISMATCH])
+    end
+
+    it "rejects a formula whose branches return different types" do
+      result = checker.check(calculator.ast(%{if(1 > 0, f_num, "x")}), expected: :numeric)
+
+      expect(result.map(&:code)).to eq([Kula::Formula::Errors::RESULT_TYPE_MISMATCH])
+      expect(result.first.detail[:actual]).to eq(:conflicting)
+    end
+
+    # A caller asking for a type the language does not model is a caller bug, not
+    # a formula the author can fix.
+    it "raises on an expected type it does not know" do
+      expect { checker.check(calculator.ast("f_num"), expected: :nonsense) }
+        .to raise_error(ArgumentError, /nonsense/)
     end
 
     # Rejecting on a guess would block valid formulas, so an indeterminate

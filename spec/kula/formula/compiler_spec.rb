@@ -110,6 +110,13 @@ RSpec.describe Kula::Formula::Compiler do
       expect(error.code).to eq(Kula::Formula::Errors::NOT_COMPUTABLE)
     end
 
+    # evaluate discards the reason; evaluate! is what tells an author whether to
+    # wait for a value or fix the formula.
+    it "evaluate returns just the value" do
+      expect(compiler.evaluate("f_412 * 2", "f_412" => 5)).to eq(10)
+      expect(compiler.evaluate("f_412 * 2", {})).to be_nil
+    end
+
     it "makes the whole function surface available" do
       value, = compiler.evaluate!(%{upper(trim("  ab  "))})
 

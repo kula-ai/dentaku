@@ -27,8 +27,10 @@ module Kula
 
       # Supplied by dentaku itself, listed so a host can offer one surface. +if+
       # is dentaku's own; this fork only relaxes its arity to allow the two-arg
-      # form and the chained else-if.
-      BUILT_IN = %w[round abs min max concat len if].freeze
+      # form and the chained else-if. and/or/not are listed because dentaku
+      # parses their infix forms as operators but their call forms as functions —
+      # rejecting not(x) while accepting `a and b` would be an arbitrary split.
+      BUILT_IN = %w[round abs min max concat len if and or not].freeze
 
       ALL = (BUILT_IN + ADDED).sort.freeze
 
@@ -143,13 +145,20 @@ module Kula
 
           case unit.to_s.downcase
           when "day", "days" then days
-          when "week", "weeks" then days / 7
+          # truncate, not integer division: / floors toward -infinity, so
+          # -64 / 7 is -10 while 64 / 7 is 9 and datediff(a, b) != -datediff(b, a).
+          when "week", "weeks" then days.fdiv(7).truncate
           when "month", "months" then months_between(later, earlier, zone)
-          when "year", "years" then months_between(later, earlier, zone) / 12
+          when "year", "years" then months_between(later, earlier, zone).fdiv(12).truncate
           end
         end
 
+        # Mirrored rather than computed directly when the arguments are the wrong
+        # way round: the partial-month adjustment always rounds toward the past,
+        # so computing both directions independently gives -3 against 2.
         def months_between(later, earlier, zone)
+          return -months_between(earlier, later, zone) if later < earlier
+
           a = to_date(later, zone)
           b = to_date(earlier, zone)
           ((a.year - b.year) * 12) + (a.month - b.month) - (a.day < b.day ? 1 : 0)

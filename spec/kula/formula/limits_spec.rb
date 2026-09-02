@@ -36,6 +36,13 @@ RSpec.describe Kula::Formula::Limits do
       expect(codes("{a} + {b}", max_references: 2)).to be_empty
     end
 
+    # An API client submits the handle form it was given, so the cap has to mean
+    # the same for either notation.
+    it "counts raw handles as well as braced tokens" do
+      expect(codes("f_1 + f_2 + f_3", max_references: 2))
+        .to eq([Kula::Formula::Errors::TOO_MANY_REFERENCES])
+    end
+
     it "does not count a brace inside a string literal" do
       expect(codes(%{equaltext({a}, "{b}")}, max_references: 1)).to be_empty
     end

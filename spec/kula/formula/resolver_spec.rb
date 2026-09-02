@@ -112,6 +112,28 @@ RSpec.describe Kula::Formula::Resolver do
     end
   end
 
+  # A reference the scanner cannot see is worse than a rejected one: the rewrite
+  # still substitutes it, so the formula stores a reference reporting no
+  # dependency and evaluating against nothing.
+  describe "unusable references" do
+    it "refuses a handle the scanner cannot match" do
+      expect { described_class.new([ref.new(handle: "F_412", token: "Cap")]) }
+        .to raise_error(described_class::InvalidReference, /F_412/)
+    end
+
+    it "refuses a field name containing a brace" do
+      expect { described_class.new([ref.new(handle: "f_1", token: "Rate {x}")]) }
+        .to raise_error(described_class::InvalidReference, /braces/)
+    end
+
+    # Duplicate tokens already raise; duplicate handles silently last-won.
+    it "refuses two references sharing a handle" do
+      expect {
+        described_class.new([ref.new(handle: "f_1", token: "A"), ref.new(handle: "f_1", token: "B")])
+      }.to raise_error(described_class::InvalidReference, /f_1/)
+    end
+  end
+
   # Normalisation deliberately widens what collides, so two genuinely different
   # fields can land on one key. Keeping the last silently would make a formula
   # read the wrong field.

@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "kula/formula/ast_walk"
 require "kula/formula/errors"
 
 module Kula
@@ -25,13 +26,19 @@ module Kula
       # the most obvious "show a fallback when blank" formula there is.
       PASS_THROUGH = %w[coalesce ifnull].freeze
 
+      # Returned when operands disagree, as distinct from nil "could not tell".
+      # Collapsing the two lets if(c, {number}, {text}) satisfy any expected type,
+      # since an unknown result is deliberately allowed through.
+      CONFLICT = :__conflict__
+
       def initialize(references)
         @types = references.each_with_object({}) do |reference, acc|
           acc[reference.handle] = normalize(reference.kind)
         end
       end
 
-      # The type a formula produces, or nil when it cannot be determined.
+      # The type a formula produces, nil when it cannot be determined, or
+      # CONFLICT when its parts disagree.
       def result_type(node)
         return nil if node.nil?
 
@@ -49,10 +56,22 @@ module Kula
 
       # Diagnostics for a formula whose result does not fit the field it feeds.
       def check(node, expected:)
-        expected = normalize(expected)
         return [] if expected.nil?
 
+        normalized = normalize(expected)
+        # A caller asking for a type the language does not model is a bug in the
+        # caller, not a formula the author can fix — say so rather than silently
+        # checking nothing.
+        raise ::ArgumentError, "unknown expected type #{expected.inspect}" if normalized.nil?
+
+        expected = normalized
+
         actual = result_type(node)
+
+        if actual == CONFLICT
+          return [Diagnostic.new(code: Errors::RESULT_TYPE_MISMATCH, detail: {expected: expected, actual: :conflicting})]
+        end
+
         # nil means "could not determine" — do not reject on a guess.
         return [] if actual.nil? || actual == expected
 
@@ -79,6 +98,8 @@ module Kula
       # take the type its operands agree on.
       def inferred_from_children(node)
         types = children(node).map { |child| result_type(child) }.compact.uniq
+        return CONFLICT if types.include?(CONFLICT)
+
         types.size == 1 ? types.first : nil
       end
 
@@ -89,21 +110,16 @@ module Kula
       end
 
       def children(node)
-        if node.respond_to?(:args) && node.args
-          Array(node.args)
-        elsif node.respond_to?(:left)
-          [node.left, (node.right if node.respond_to?(:right))].compact
-        else
-          []
-        end
+        AstWalk.children(node)
       end
 
       def unify(left, right)
         return left if left == right
+        return CONFLICT if [left, right].include?(CONFLICT)
         return right if left.nil?
         return left if right.nil?
 
-        nil
+        CONFLICT
       end
 
       def normalize(kind)

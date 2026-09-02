@@ -52,11 +52,21 @@ module Kula
       def dependents_of(handle, seen = [])
         return [] if seen.include?(handle)
 
-        seen = seen + [handle]
-        @edges.select { |_owner, deps| deps.include?(handle) }
-          .keys
-          .flat_map { |owner| [owner] + dependents_of(owner, seen) }
-          .uniq
+        # Memoised like chain_depth: on a diamond, many owners reading the same
+        # few handles would otherwise revisit the shared subgraph once per path.
+        @dependents ||= {}
+        @dependents[handle] ||= begin
+          onward = seen + [handle]
+          readers.fetch(handle, []).flat_map { |owner| [owner] + dependents_of(owner, onward) }.uniq
+        end
+      end
+
+      # Reverse index, built once: dependents_of would otherwise scan every edge
+      # on every recursion.
+      def readers
+        @readers ||= @edges.each_with_object(::Hash.new { |h, k| h[k] = [] }) do |(owner, deps), acc|
+          deps.each { |dep| acc[dep] << owner }
+        end
       end
 
       def tsort_each_node(&block)
