@@ -7,6 +7,7 @@ require "kula/formula/errors"
 require "kula/formula/limits"
 require "kula/formula/resolver"
 require "kula/formula/result"
+require "kula/formula/type_checker"
 
 # A formula language on top of dentaku: the function surface, the rewrite between
 # author-facing names and stored handles, the caps, and the dependency graph.

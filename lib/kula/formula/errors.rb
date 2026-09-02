@@ -17,6 +17,7 @@ module Kula
       UNKNOWN_FUNCTION = "err_formula_unknown_function"
       DIVISION_BY_ZERO = "err_formula_division_by_zero"
       NOT_COMPUTABLE = "err_formula_not_computable"
+      RESULT_TYPE_MISMATCH = "err_formula_result_type"
 
       ALL = constants.map { |name| const_get(name) }.select { |value| value.is_a?(::String) }.freeze
     end

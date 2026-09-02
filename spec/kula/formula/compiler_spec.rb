@@ -7,9 +7,9 @@ RSpec.describe Kula::Formula::Compiler do
   let(:ref) { Kula::Formula::Resolver::Reference }
   let(:references) do
     [
-      ref.new(handle: "f_412", token: "Base salary"),
-      ref.new(handle: "f_413", token: "Bonus %"),
-      ref.new(handle: "s_start_date", token: "Start date")
+      ref.new(handle: "f_412", token: "Base salary", kind: :numeric),
+      ref.new(handle: "f_413", token: "Bonus %", kind: :numeric),
+      ref.new(handle: "s_title", token: "Job title", kind: :string)
     ]
   end
 
@@ -50,6 +50,22 @@ RSpec.describe Kula::Formula::Compiler do
       result = described_class.new(limits: Kula::Formula::Limits.new(max_length: 10)).compile("1 + 1 + 1 + 1 + 1")
 
       expect(result.codes).to eq([Kula::Formula::Errors::TOO_LONG])
+    end
+
+    it "rejects a formula whose result cannot fit the field" do
+      result = compiler.compile("{Job title}", expected_type: :numeric)
+
+      expect(result).not_to be_valid
+      expect(result.codes).to eq([Kula::Formula::Errors::RESULT_TYPE_MISMATCH])
+    end
+
+    it "accepts a formula whose result fits" do
+      expect(compiler.compile("{Base salary} * 2", expected_type: :numeric)).to be_valid
+    end
+
+    # A preview does not know what field it will feed.
+    it "skips the type check when no expectation is given" do
+      expect(compiler.compile("{Job title}")).to be_valid
     end
 
     it "accepts the chained conditional form" do

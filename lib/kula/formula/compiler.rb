@@ -6,6 +6,7 @@ require "kula/formula/errors"
 require "kula/formula/limits"
 require "kula/formula/resolver"
 require "kula/formula/result"
+require "kula/formula/type_checker"
 
 module Kula
   module Formula
@@ -28,17 +29,21 @@ module Kula
 
       attr_reader :resolver
 
-      def compile(source)
+      # +expected_type+ is the type the field this formula feeds can hold. Passing
+      # nil skips the check, which is what a preview wants.
+      def compile(source, expected_type: nil)
         over_budget = @limits.check(source)
         return Result.failure(source, over_budget) if over_budget.any?
 
         stored = @resolver.to_storage(source)
         ast = parse(stored)
+        mismatched = type_checker.check(ast, expected: expected_type)
 
         Result.new(
           source: source,
           stored: stored,
           dependencies: @resolver.dependencies(stored),
+          diagnostics: mismatched,
           ast: ast
         )
       rescue Resolver::UnknownToken => e
@@ -65,6 +70,10 @@ module Kula
         [nil, Diagnostic.new(code: Errors::NOT_COMPUTABLE, detail: {unbound: Array(e.unbound_variables)})]
       rescue ::Dentaku::Error
         [nil, Diagnostic.new(code: Errors::NOT_COMPUTABLE)]
+      end
+
+      def type_checker
+        @type_checker ||= TypeChecker.new(@resolver.references)
       end
 
       def calculator
