@@ -21,6 +21,10 @@ module Kula
 
       TOKEN_PATTERN = /\{([^{}]+)\}/
       HANDLE_PATTERN = /\b([a-z]_[a-zA-Z0-9_]+)\b/
+      # Text between quotes is data, not syntax: a brace or a handle-shaped word
+      # inside it must survive rewriting untouched and must never become a
+      # dependency.
+      LITERAL_PATTERN = /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/
 
       # Raised when a typed token names no known field. Carries the offset so an
       # editor can underline it.
@@ -34,9 +38,26 @@ module Kula
         end
       end
 
+      # Raised when two references normalise to the same token. Silently keeping
+      # the last would make {Base salary} resolve to whichever the caller happened
+      # to pass second, with no error and a formula reading the wrong field.
+      class AmbiguousToken < StandardError
+        attr_reader :token
+
+        def initialize(token)
+          @token = token
+          super("more than one field is named #{token.inspect}")
+        end
+      end
+
       def initialize(references)
         @references = references.to_a
-        @by_token = @references.each_with_object({}) { |ref, acc| acc[normalize(ref.token)] = ref }
+        @by_token = @references.each_with_object({}) do |ref, acc|
+          key = normalize(ref.token)
+          raise AmbiguousToken.new(ref.token) if acc.key?(key)
+
+          acc[key] = ref
+        end
         @by_handle = @references.each_with_object({}) { |ref, acc| acc[ref.handle] = ref }
       end
 
@@ -44,7 +65,9 @@ module Kula
 
       # "{Base salary} * 2" -> "f_412 * 2"
       def to_storage(source)
-        source.to_s.gsub(TOKEN_PATTERN) do
+        source.to_s.gsub(/#{LITERAL_PATTERN}|#{TOKEN_PATTERN}/) do |match|
+          next match if literal?(match)
+
           token = ::Regexp.last_match(1)
           reference = @by_token[normalize(token)]
           raise UnknownToken.new(token, ::Regexp.last_match.begin(0)) if reference.nil?
@@ -57,10 +80,11 @@ module Kula
       # removed renders as the raw handle rather than vanishing, so the author can
       # see what broke.
       def to_display(stored)
-        stored.to_s.gsub(HANDLE_PATTERN) do
-          handle = ::Regexp.last_match(1)
-          reference = @by_handle[handle]
-          reference ? "{#{reference.token}}" : handle
+        stored.to_s.gsub(/#{LITERAL_PATTERN}|#{HANDLE_PATTERN}/) do |match|
+          next match if literal?(match)
+
+          reference = @by_handle[match]
+          reference ? "{#{reference.token}}" : match
         end
       end
 
@@ -83,7 +107,18 @@ module Kula
       private
 
       def handles(stored)
-        stored.to_s.scan(HANDLE_PATTERN).flatten.uniq
+        outside_literals(stored).scan(HANDLE_PATTERN).flatten.uniq
+      end
+
+      # Blanks out quoted text so a handle-shaped word inside it is never read as
+      # a reference. Replaced with a space rather than removed so offsets do not
+      # shift for anything downstream.
+      def outside_literals(text)
+        text.to_s.gsub(LITERAL_PATTERN) { |literal| " " * literal.length }
+      end
+
+      def literal?(match)
+        match.start_with?('"', "'")
       end
 
       # Tokens compare case- and whitespace-insensitively, so {base salary}

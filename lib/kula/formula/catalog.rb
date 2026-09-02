@@ -17,7 +17,6 @@ module Kula
     # yields nil, and that nil has to reach the top as "not computable yet"
     # rather than raising part-way through a save.
     module Catalog
-      SECONDS_PER_DAY = 86_400
       DEFAULT_ZONE = "UTC"
 
       # Registered on top of dentaku's built-ins.
@@ -26,8 +25,10 @@ module Kula
         equaltext upper lower trim contains coalesce ifnull isnull
       ].freeze
 
-      # Supplied by dentaku itself, listed so a host can offer one surface.
-      BUILT_IN = %w[round abs min max concat len].freeze
+      # Supplied by dentaku itself, listed so a host can offer one surface. +if+
+      # is dentaku's own; this fork only relaxes its arity to allow the two-arg
+      # form and the chained else-if.
+      BUILT_IN = %w[round abs min max concat len if].freeze
 
       ALL = (BUILT_IN + ADDED).sort.freeze
 
@@ -50,10 +51,13 @@ module Kula
         def dates(calculator, zone)
           calculator.add_function(:today, :numeric, -> { from_date(now(zone).to_date, zone) })
 
+          # Date-granular: time-of-day is dropped, so dateadd(t, 0, "day") returns
+          # midnight of t's day rather than t itself.
           calculator.add_function(:dateadd, :numeric, ->(timestamp, amount, unit) {
             next nil if timestamp.nil? || amount.nil?
 
-            from_date(advance(to_date(timestamp, zone), amount.to_i, unit), zone)
+            moved = advance(to_date(timestamp, zone), amount.to_i, unit)
+            moved && from_date(moved, zone)
           })
 
           calculator.add_function(:datediff, :numeric, ->(later, earlier, unit) {
@@ -75,12 +79,21 @@ module Kula
           # Case-insensitive by design: comparing against an option label should
           # not require matching its casing.
           calculator.add_function(:equaltext, :logical, ->(left, right) {
+            # nil is "not answered", not "empty string": without this, two blank
+            # fields would compare equal and a gate built on it would fire on
+            # data nobody has filled in.
+            next nil if left.nil? || right.nil?
+
             left.to_s.casecmp?(right.to_s)
           })
 
-          # Overrides dentaku's list-membership CONTAINS with substring search,
-          # which is what a text formula means by it.
-          calculator.add_function(:contains, :logical, ->(haystack, needle) {
+          # Upstream CONTAINS is already a substring test; this override only adds
+          # case-insensitivity and nil tolerance. Argument order matches upstream
+          # deliberately — needle first, haystack second — so a formula written
+          # against dentaku's documented signature keeps its meaning.
+          calculator.add_function(:contains, :logical, ->(needle, haystack) {
+            next nil if needle.nil? || haystack.nil?
+
             haystack.to_s.downcase.include?(needle.to_s.downcase)
           })
         end
@@ -102,27 +115,37 @@ module Kula
           (time.respond_to?(:in_time_zone) ? time.in_time_zone(zone) : time.utc).to_date
         end
 
+        # Without ActiveSupport there is no zone support at all, so fall back to
+        # UTC midnight rather than system-local, matching to_date's fallback.
         def from_date(date, zone)
-          date.respond_to?(:in_time_zone) ? date.in_time_zone(zone).to_i : date.to_time.utc.to_i
+          return date.in_time_zone(zone).to_i if date.respond_to?(:in_time_zone)
+
+          ::Time.utc(date.year, date.month, date.day).to_i
         end
 
+        # An unrecognised unit yields nil rather than quietly meaning days: the
+        # unit is an author-typed literal, so a typo is the expected failure and
+        # should surface rather than produce a plausible wrong number.
         def advance(date, amount, unit)
           case unit.to_s.downcase
+          when "day", "days" then date + amount
           when "week", "weeks" then date + (amount * 7)
           when "month", "months" then date >> amount
           when "year", "years" then date >> (amount * 12)
-          else date + amount
           end
         end
 
+        # Whole days between the two dates, not raw epoch seconds: dividing
+        # seconds disagrees with day() across a midnight boundary, and floors
+        # negatives asymmetrically so datediff(a, b) != -datediff(b, a).
         def difference(later, earlier, unit, zone)
-          days = (later - earlier) / SECONDS_PER_DAY
+          days = (to_date(later, zone) - to_date(earlier, zone)).to_i
 
           case unit.to_s.downcase
+          when "day", "days" then days
           when "week", "weeks" then days / 7
           when "month", "months" then months_between(later, earlier, zone)
           when "year", "years" then months_between(later, earlier, zone) / 12
-          else days
           end
         end
 

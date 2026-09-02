@@ -19,6 +19,12 @@ module Kula
       # numeric here. A host wanting stricter date typing can map them itself.
       TYPES = %i[numeric string logical].freeze
 
+      # Registered with a fixed :numeric return type because dentaku's registry
+      # wants one, but they actually pass their operands through. Taking that
+      # declared type would reject coalesce({Job title}, "n/a") on a text field —
+      # the most obvious "show a fallback when blank" formula there is.
+      PASS_THROUGH = %w[coalesce ifnull].freeze
+
       def initialize(references)
         @types = references.each_with_object({}) do |reference, acc|
           acc[reference.handle] = normalize(reference.kind)
@@ -59,6 +65,8 @@ module Kula
       private
 
       def declared(node)
+        return nil if pass_through?(node)
+
         type = node.type if node.respond_to?(:type)
         TYPES.include?(type) ? type : nil
       rescue ::StandardError
@@ -72,6 +80,12 @@ module Kula
       def inferred_from_children(node)
         types = children(node).map { |child| result_type(child) }.compact.uniq
         types.size == 1 ? types.first : nil
+      end
+
+      def pass_through?(node)
+        return false unless node.is_a?(::Dentaku::AST::Function)
+
+        PASS_THROUGH.include?(node.class.name.to_s.split("::").last.to_s.downcase)
       end
 
       def children(node)

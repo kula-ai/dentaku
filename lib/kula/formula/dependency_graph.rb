@@ -44,9 +44,19 @@ module Kula
 
       # Handles whose formulas read the given one, directly or transitively.
       # This is what answers "what breaks if I change this field".
-      def dependents_of(handle)
-        direct = @edges.select { |_owner, deps| deps.include?(handle) }.keys
-        direct.flat_map { |owner| [owner] + dependents_of(owner) }.uniq
+      #
+      # Carries a visited set because a caller may reasonably ask this *before*
+      # repairing a cycle — that is the natural order of operations, and without
+      # the guard it recurses until SystemStackError, which is not a
+      # StandardError and so escapes an ordinary rescue.
+      def dependents_of(handle, seen = [])
+        return [] if seen.include?(handle)
+
+        seen = seen + [handle]
+        @edges.select { |_owner, deps| deps.include?(handle) }
+          .keys
+          .flat_map { |owner| [owner] + dependents_of(owner, seen) }
+          .uniq
       end
 
       def tsort_each_node(&block)
@@ -108,7 +118,10 @@ module Kula
         children = @edges.fetch(handle, [])
         return 0 if children.empty?
 
-        1 + children.map { |child| chain_depth(child, seen + [handle]) }.max
+        # Memoised: a diamond where many handles read the same few would
+        # otherwise revisit the shared subgraph once per path.
+        @depths ||= {}
+        @depths[handle] ||= 1 + children.map { |child| chain_depth(child, seen + [handle]) }.max
       end
     end
   end

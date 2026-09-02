@@ -2,6 +2,7 @@
 
 require "dentaku"
 require "kula/formula/catalog"
+require "kula/formula/dependency_graph"
 require "kula/formula/errors"
 require "kula/formula/limits"
 require "kula/formula/resolver"
@@ -37,13 +38,12 @@ module Kula
 
         stored = @resolver.to_storage(source)
         ast = parse(stored)
-        mismatched = type_checker.check(ast, expected: expected_type)
 
         Result.new(
           source: source,
           stored: stored,
           dependencies: @resolver.dependencies(stored),
-          diagnostics: mismatched,
+          diagnostics: dangling(stored) + unknown_functions(ast) + type_checker.check(ast, expected: expected_type),
           ast: ast
         )
       rescue Resolver::UnknownToken => e
@@ -51,7 +51,12 @@ module Kula
       rescue ::Dentaku::TokenizerError => e
         Result.failure(source, tokenizer_diagnostics(e))
       rescue ::Dentaku::ParseError => e
-        Result.failure(source, Diagnostic.new(code: Errors::SYNTAX, position: e.meta[:position]))
+        Result.failure(source, parse_diagnostic(e))
+      rescue ::Dentaku::ArgumentError => e
+        # Dentaku::ArgumentError descends from ::ArgumentError, so it is not
+        # covered by the rescues above. Named here so "compiling never raises"
+        # holds by construction rather than by enumeration.
+        Result.failure(source, Diagnostic.new(code: Errors::SYNTAX, detail: {message: e.message}))
       end
 
       # Evaluates an already-compiled formula. Returns nil rather than raising
@@ -94,6 +99,59 @@ module Kula
       # registry to know that ceiling() and the rest exist.
       def parse(stored)
         calculator.ast(stored)
+      end
+
+      # A handle typed directly rather than as {Token} never passes through the
+      # rewrite, so it reaches storage unchecked. Without this it saves clean and
+      # fails at evaluation as "not computable yet" — telling the author we are
+      # waiting on a field that does not exist.
+      def dangling(stored)
+        @resolver.dangling(stored).map do |handle|
+          Diagnostic.new(code: Errors::DANGLING_REFERENCE, detail: {handle: handle})
+        end
+      end
+
+      # Installing onto a stock calculator leaves every dentaku built-in reachable
+      # — sum, filter, left, and all of Math via RubyMath. Catalog::ALL is the
+      # surface we document and support, so anything outside it is rejected here
+      # rather than silently evaluating.
+      def unknown_functions(ast)
+        function_names(ast).reject { |name| Catalog::ALL.include?(name) }
+          .uniq
+          .map { |name| Diagnostic.new(code: Errors::UNKNOWN_FUNCTION, detail: {function: name}) }
+      end
+
+      def function_names(node, found = [])
+        return found if node.nil?
+
+        if node.is_a?(::Dentaku::AST::Function)
+          found << node.class.name.to_s.split("::").last.downcase
+        end
+
+        node_children(node).each { |child| function_names(child, found) }
+        found
+      end
+
+      def node_children(node)
+        if node.respond_to?(:args) && node.args
+          Array(node.args)
+        elsif node.respond_to?(:left)
+          [node.left, (node.right if node.respond_to?(:right))].compact
+        else
+          []
+        end
+      end
+
+      # A mistyped function name is not a syntax error, and the parser already
+      # distinguishes them.
+      def parse_diagnostic(error)
+        code = (error.reason == :undefined_function) ? Errors::UNKNOWN_FUNCTION : Errors::SYNTAX
+        Diagnostic.new(code: code, position: error.meta[:position], detail: function_detail(error))
+      end
+
+      def function_detail(error)
+        named = error.meta[:function_name]
+        named.nil? ? nil : {function: named}
       end
 
       def tokenizer_diagnostics(error)

@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "kula/formula/errors"
+require "kula/formula/resolver"
 
 module Kula
   module Formula
@@ -17,6 +18,9 @@ module Kula
       }.freeze
 
       def initialize(**overrides)
+        unknown = overrides.keys - DEFAULTS.keys
+        raise ::ArgumentError, "unknown budget: #{unknown.join(", ")}" if unknown.any?
+
         @budget = DEFAULTS.merge(overrides)
       end
 

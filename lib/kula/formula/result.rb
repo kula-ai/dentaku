@@ -28,6 +28,7 @@ module Kula
       def to_h
         {
           valid: valid?,
+          source: source,
           stored: stored,
           dependencies: dependencies,
           diagnostics: diagnostics.map(&:to_h)
