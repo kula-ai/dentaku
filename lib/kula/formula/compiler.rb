@@ -68,7 +68,10 @@ module Kula
         [nil, Diagnostic.new(code: Errors::DIVISION_BY_ZERO)]
       rescue ::Dentaku::UnboundVariableError => e
         [nil, Diagnostic.new(code: Errors::NOT_COMPUTABLE, detail: {unbound: Array(e.unbound_variables)})]
-      rescue ::Dentaku::Error
+      rescue ::Dentaku::ArgumentError, ::Dentaku::Error
+        # Dentaku::ArgumentError descends from ::ArgumentError rather than
+        # Dentaku::Error, so it needs naming: it is what an operation over an
+        # unanswered field raises, which is "not computable yet".
         [nil, Diagnostic.new(code: Errors::NOT_COMPUTABLE)]
       end
 

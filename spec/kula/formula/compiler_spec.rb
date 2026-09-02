@@ -101,6 +101,15 @@ RSpec.describe Kula::Formula::Compiler do
       expect(error.code).to eq(Kula::Formula::Errors::NOT_COMPUTABLE)
     end
 
+    # An operation over an unanswered field raises Dentaku::ArgumentError, which
+    # descends from ::ArgumentError rather than Dentaku::Error.
+    it "reports an operation over a missing value rather than raising" do
+      value, error = compiler.evaluate!("f_412 * 2", "f_412" => nil)
+
+      expect(value).to be_nil
+      expect(error.code).to eq(Kula::Formula::Errors::NOT_COMPUTABLE)
+    end
+
     it "makes the whole function surface available" do
       value, = compiler.evaluate!(%{upper(trim("  ab  "))})
 
