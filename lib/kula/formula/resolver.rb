@@ -121,10 +121,6 @@ module Kula
         handles(stored).reject { |handle| @by_handle.key?(handle) }
       end
 
-      def reference_for(handle)
-        @by_handle[handle]
-      end
-
       # Blanks out quoted text so nothing inside it is read as syntax. Replaced
       # with spaces rather than removed so offsets do not shift for anything
       # downstream.

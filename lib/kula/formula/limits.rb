@@ -7,50 +7,37 @@ module Kula
   module Formula
     # Caps applied before a formula reaches the parser, so a hostile or careless
     # input is rejected cheaply rather than after the work of parsing it.
-    #
-    # Budgets are per-call rather than constants: saving a definition can afford
-    # a stricter cap than an editor preview typed character by character.
-    class Limits
-      DEFAULTS = {
-        max_length: 4_000,
-        max_references: 50,
-        max_nesting: 32
-      }.freeze
+    module Limits
+      MAX_LENGTH = 4_000
+      MAX_REFERENCES = 50
+      MAX_NESTING = 32
 
-      def initialize(**overrides)
-        unknown = overrides.keys - DEFAULTS.keys
-        raise ::ArgumentError, "unknown budget: #{unknown.join(", ")}" if unknown.any?
-
-        @budget = DEFAULTS.merge(overrides)
-      end
-
-      attr_reader :budget
+      module_function
 
       # Returns diagnostics; empty means within budget.
       def check(source)
         text = source.to_s
         found = []
 
-        found << over(Errors::TOO_LONG, text.length, :max_length) if text.length > @budget[:max_length]
+        found << over(Errors::TOO_LONG, text.length, MAX_LENGTH) if text.length > MAX_LENGTH
 
         countable = Resolver.outside_literals(text)
         # Both notations count: an author types {Token}, an API client may submit
         # the handle form it was given, and the cap has to mean the same for each.
         references = countable.scan(Resolver::TOKEN_PATTERN).size +
           countable.scan(Resolver::HANDLE_PATTERN).size
-        found << over(Errors::TOO_MANY_REFERENCES, references, :max_references) if references > @budget[:max_references]
+        found << over(Errors::TOO_MANY_REFERENCES, references, MAX_REFERENCES) if references > MAX_REFERENCES
 
         depth = max_depth(countable)
-        found << over(Errors::TOO_DEEPLY_NESTED, depth, :max_nesting) if depth > @budget[:max_nesting]
+        found << over(Errors::TOO_DEEPLY_NESTED, depth, MAX_NESTING) if depth > MAX_NESTING
 
         found
       end
 
-      private
-
-      def over(code, actual, key)
-        Diagnostic.new(code: code, detail: {limit: @budget[key], actual: actual})
+      def over(code, actual, limit)
+        Diagnostic.new(code: code, detail: {limit: limit, actual: actual})
       end
+      private_class_method :over
 
       # Counted on the source rather than the AST: the point is to reject before
       # parsing, and a parser blows its stack on deep nesting. Quoted text is
@@ -69,6 +56,7 @@ module Kula
 
         deepest
       end
+      private_class_method :max_depth
     end
   end
 end

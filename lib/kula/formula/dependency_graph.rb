@@ -38,37 +38,6 @@ module Kula
         tsort
       end
 
-      def sound?(known: nil)
-        diagnostics(known: known).empty?
-      end
-
-      # Handles whose formulas read the given one, directly or transitively.
-      # This is what answers "what breaks if I change this field".
-      #
-      # Carries a visited set because a caller may reasonably ask this *before*
-      # repairing a cycle — that is the natural order of operations, and without
-      # the guard it recurses until SystemStackError, which is not a
-      # StandardError and so escapes an ordinary rescue.
-      def dependents_of(handle, seen = [])
-        return [] if seen.include?(handle)
-
-        # Memoised like chain_depth: on a diamond, many owners reading the same
-        # few handles would otherwise revisit the shared subgraph once per path.
-        @dependents ||= {}
-        @dependents[handle] ||= begin
-          onward = seen + [handle]
-          readers.fetch(handle, []).flat_map { |owner| [owner] + dependents_of(owner, onward) }.uniq
-        end
-      end
-
-      # Reverse index, built once: dependents_of would otherwise scan every edge
-      # on every recursion.
-      def readers
-        @readers ||= @edges.each_with_object(::Hash.new { |h, k| h[k] = [] }) do |(owner, deps), acc|
-          deps.each { |dep| acc[dep] << owner }
-        end
-      end
-
       def tsort_each_node(&block)
         @edges.each_key(&block)
       end

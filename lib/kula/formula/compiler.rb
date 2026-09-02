@@ -23,10 +23,9 @@ module Kula
     # Compiling never raises on bad input: a formula an author is halfway through
     # typing is the normal case, not an exception.
     class Compiler
-      def initialize(references: [], zone: Catalog::DEFAULT_ZONE, limits: Limits.new)
+      def initialize(references: [], zone: Catalog::DEFAULT_ZONE)
         @resolver = Resolver.new(references)
         @zone = zone
-        @limits = limits
       end
 
       attr_reader :resolver
@@ -34,7 +33,7 @@ module Kula
       # +expected_type+ is the type the field this formula feeds can hold. Passing
       # nil skips the check, which is what a preview wants.
       def compile(source, expected_type: nil)
-        over_budget = @limits.check(source)
+        over_budget = Limits.check(source)
         return Result.failure(source, over_budget) if over_budget.any?
 
         stored = @resolver.to_storage(source)
@@ -60,14 +59,9 @@ module Kula
         Result.failure(source, Diagnostic.new(code: Errors::SYNTAX, detail: {message: e.message}))
       end
 
-      # Evaluates an already-compiled formula, discarding why it could not.
-      # Prefer evaluate!, which distinguishes "waiting on a value" from "this
-      # formula is broken" — they need different things said to the author.
-      def evaluate(stored, context = {})
-        evaluate!(stored, context).first
-      end
-
-      # Same, but reports why it could not compute.
+      # Evaluates an already-compiled formula, reporting why it could not: the
+      # caller has to distinguish "waiting on a value" from "this formula is
+      # broken", because those need different things said to the author.
       def evaluate!(stored, context = {})
         [calculator.evaluate!(stored, context), nil]
       rescue ::Dentaku::ZeroDivisionError
@@ -81,6 +75,8 @@ module Kula
         [nil, Diagnostic.new(code: Errors::NOT_COMPUTABLE)]
       end
 
+      private
+
       def type_checker
         @type_checker ||= TypeChecker.new(@resolver.references)
       end
@@ -88,8 +84,6 @@ module Kula
       def calculator
         @calculator ||= Catalog.install(::Dentaku::Calculator.new, zone: @zone)
       end
-
-      private
 
       # Through the calculator, not a bare parser: the parser needs the function
       # registry to know that ceiling() and the rest exist.

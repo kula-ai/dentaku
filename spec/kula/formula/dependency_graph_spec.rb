@@ -59,26 +59,4 @@ RSpec.describe Kula::Formula::DependencyGraph do
       expect(order.index("bonus")).to be < order.index("total")
     end
   end
-
-  describe "#dependents_of" do
-    it "finds direct and transitive readers" do
-      g = build({"total" => %w[base], "grand" => %w[total], "other" => []})
-
-      expect(g.dependents_of("base")).to match_array(%w[total grand])
-    end
-
-    # A caller may reasonably ask this before repairing a cycle; without a
-    # visited set it recursed until SystemStackError, which is not a
-    # StandardError and so escapes an ordinary rescue.
-    it "terminates on a cyclic graph" do
-      expect(build({"a" => %w[b], "b" => %w[a]}).dependents_of("a")).to match_array(%w[a b])
-    end
-
-    # A diamond revisits the shared subgraph once per path unless memoised.
-    it "stays quick on a diamond" do
-      edges = {"top" => %w[l r], "l" => %w[base], "r" => %w[base], "base" => []}
-
-      expect(build(edges).dependents_of("base")).to match_array(%w[l r top])
-    end
-  end
 end

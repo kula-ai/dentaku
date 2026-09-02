@@ -47,7 +47,7 @@ RSpec.describe Kula::Formula::Compiler do
     end
 
     it "rejects an over-long formula before parsing it" do
-      result = described_class.new(limits: Kula::Formula::Limits.new(max_length: 10)).compile("1 + 1 + 1 + 1 + 1")
+      result = described_class.new.compile("1 + " * Kula::Formula::Limits::MAX_LENGTH + "1")
 
       expect(result.codes).to eq([Kula::Formula::Errors::TOO_LONG])
     end
@@ -108,13 +108,6 @@ RSpec.describe Kula::Formula::Compiler do
 
       expect(value).to be_nil
       expect(error.code).to eq(Kula::Formula::Errors::NOT_COMPUTABLE)
-    end
-
-    # evaluate discards the reason; evaluate! is what tells an author whether to
-    # wait for a value or fix the formula.
-    it "evaluate returns just the value" do
-      expect(compiler.evaluate("f_412 * 2", "f_412" => 5)).to eq(10)
-      expect(compiler.evaluate("f_412 * 2", {})).to be_nil
     end
 
     it "makes the whole function surface available" do
