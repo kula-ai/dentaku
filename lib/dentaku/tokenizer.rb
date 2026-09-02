@@ -13,6 +13,7 @@ module Dentaku
     def tokenize(string, options = {})
       @nesting = 0
       @offset  = 0
+      @open_parens = []
       @errors  = []
       @tokens  = []
       @aliases = options.fetch(:aliases, global_aliases)
@@ -40,7 +41,7 @@ module Dentaku
       end
 
       fail! :lexical_errors, errors: @errors if @errors.any?
-      fail! :too_many_opening_parentheses if @nesting > 0
+      fail! :too_many_opening_parentheses, position: @open_parens.first if @nesting > 0
 
       ChainRewriter.rewrite(@tokens)
     end
@@ -57,9 +58,15 @@ module Dentaku
                   token_category: token.category, at: string
           end
 
-          @nesting += 1 if LPAREN == token
-          @nesting -= 1 if RPAREN == token
-          fail! :too_many_closing_parentheses if @nesting < 0
+          if LPAREN == token
+            @nesting += 1
+            @open_parens << @offset
+          end
+          if RPAREN == token
+            @nesting -= 1
+            @open_parens.pop
+          end
+          fail! :too_many_closing_parentheses, position: @offset if @nesting < 0
 
           token.position = @offset
           @offset += token.length

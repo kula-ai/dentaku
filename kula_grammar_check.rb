@@ -78,6 +78,24 @@ check("two bad characters report two errors") do
   end
 end
 
+puts "\n== Engine requirement: every tokenizer error names a position =="
+check("unbalanced open paren reports its position") do
+  begin
+    Dentaku::Tokenizer.new.tokenize("f_412 * (1 + 2")
+    false
+  rescue Dentaku::TokenizerError => e
+    e.errors.first[:position] == 8 ? :ok : (puts("       errors=#{e.errors.inspect}"); false)
+  end
+end
+check("unbalanced close paren reports its position") do
+  begin
+    Dentaku::Tokenizer.new.tokenize("f_412 * 1) + 2")
+    false
+  rescue Dentaku::TokenizerError => e
+    e.errors.first[:position] == 9 ? :ok : (puts("       errors=#{e.errors.inspect}"); false)
+  end
+end
+
 puts "\n== Regression: upstream behaviour still works =="
 eq("arithmetic",    7)  { calc.evaluate!("1 + 2 * 3") }
 eq("3-arg if",      10) { calc.evaluate!("if(1>0, 10, 20)") }
