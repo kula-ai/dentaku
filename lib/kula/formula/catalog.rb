@@ -1,5 +1,8 @@
 # frozen_string_literal: true
 
+require "bigdecimal"
+require "bigdecimal/util"
+
 module Kula
   module Formula
     # The function surface a formula may use.
@@ -52,15 +55,20 @@ module Kula
 
         # add_function declares a return type, not argument types, and a field's
         # stored value can disagree with its declared kind — so a wrong-typed
-        # operand reaches these lambdas. It degrades to nil, the same as an
-        # unanswered field: without this, ceiling("abc") raises NoMethodError
-        # straight past evaluate! to the host, and year("abc") reads 0 as 1970.
+        # operand reaches these lambdas. nil stays nil (an unanswered field), but
+        # anything else that is not a number raises: without this, ceiling("abc")
+        # is a NoMethodError past evaluate! to the host, and year("abc") reads 0
+        # as 1970. Dentaku::ArgumentError because evaluate! already maps it.
+        #
+        # BigDecimal rather than Float: dentaku carries decimals as BigDecimal, and
+        # Float would cap precision at ~15 digits and quietly accept "0x10".
         def as_number(value)
           return nil if value.nil?
+          return value if value.is_a?(::Numeric)
 
-          ::Kernel::Float(value)
+          ::Kernel::BigDecimal(value.to_s)
         rescue ::ArgumentError, ::TypeError
-          nil
+          raise ::Dentaku::ArgumentError.for(:incompatible_type, value: value)
         end
 
         def dates(calculator, zone)
@@ -72,14 +80,15 @@ module Kula
             next nil if timestamp.nil? || amount.nil?
 
             start = to_date(timestamp, zone)
-            moved = start && advance(start, amount.to_i, unit)
+            step = as_number(amount)
+            moved = start && step && advance(start, step.to_i, unit)
             moved && from_date(moved, zone)
           })
 
           calculator.add_function(:datediff, :numeric, ->(later, earlier, unit) {
             next nil if later.nil? || earlier.nil?
 
-            difference(later.to_i, earlier.to_i, unit, zone)
+            difference(later, earlier, unit, zone)
           })
 
           calculator.add_function(:year, :numeric, ->(ts) { to_date(ts, zone)&.year })
@@ -178,10 +187,10 @@ module Kula
         # way round: the partial-month adjustment always rounds toward the past,
         # so computing both directions independently gives -3 against 2.
         def months_between(later, earlier, zone)
-          return -months_between(earlier, later, zone) if later < earlier
-
           a = to_date(later, zone)
           b = to_date(earlier, zone)
+          return -months_between(earlier, later, zone) if a < b
+
           ((a.year - b.year) * 12) + (a.month - b.month) - (a.day < b.day ? 1 : 0)
         end
       end

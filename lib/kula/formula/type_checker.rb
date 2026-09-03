@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "kula/formula/ast_walk"
+require "kula/formula/resolver"
 require "kula/formula/errors"
 
 module Kula
@@ -83,15 +84,15 @@ module Kula
 
       private
 
+      # No rescue: every #type in dentaku returns a literal or delegates, so the
+      # blanket one this replaced was catching nothing. A type outside TYPES —
+      # including a nil from a node that has no type — falls through to the
+      # children walk, which is the fallback the rescue was reaching for anyway.
       def declared(node)
         return nil if pass_through?(node)
 
         type = node.type if node.respond_to?(:type)
         TYPES.include?(type) ? type : nil
-      rescue ::Dentaku::Error, ::Dentaku::ArgumentError
-        # A node whose type depends on operands dentaku cannot resolve — fall
-        # back to walking the children ourselves.
-        nil
       end
 
       # An operation over references reports nil until its leaves are known, so
@@ -106,7 +107,7 @@ module Kula
       def pass_through?(node)
         return false unless node.is_a?(::Dentaku::AST::Function)
 
-        PASS_THROUGH.include?(AstWalk.function_name(node))
+        PASS_THROUGH.include?(AstWalk.node_name(node))
       end
 
       def children(node)

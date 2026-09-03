@@ -115,10 +115,45 @@ RSpec.describe Kula::Formula::Compiler do
 
       expect(value).to eq("AB")
     end
-      it "makes the whole function surface available" do
-      value, = compiler.evaluate!(%{upper(trim("  ab  "))})
 
-      expect(value).to eq("AB")
+    # nil is a legitimate answer, not a failure. The two-arg if is the fork's own
+    # grammar feature and the harness asserts it returns nil.
+    it "reports a conditional that did not match as an answer, not a failure" do
+      value, error = compiler.evaluate!("if(1>2, 10)")
+
+      expect(value).to be_nil
+      expect(error).to be_nil
+    end
+
+    # to_i ran before to_date saw the value, so "abc" became 0 and read as 1970 —
+    # the same bug this closed for year/month/day.
+    it "does not read a wrong-typed datediff operand as the epoch" do
+      value, error = compiler.evaluate!(%{datediff(f_412, 0, "day")}, "f_412" => "abc")
+
+      expect(value).to be_nil
+      expect(error.code).to eq(Kula::Formula::Errors::NOT_COMPUTABLE)
+    end
+
+    it "does not read a wrong-typed dateadd amount as zero" do
+      value, error = compiler.evaluate!(%{dateadd(0, f_412, "day")}, "f_412" => "abc")
+
+      expect(value).to be_nil
+      expect(error.code).to eq(Kula::Formula::Errors::NOT_COMPUTABLE)
+    end
+
+    # Float would accept "0x10" and cap precision at ~15 digits; dentaku carries
+    # decimals as BigDecimal.
+    it "keeps a large decimal exact rather than routing it through Float" do
+      value, = compiler.evaluate!("ceiling(f_412)", "f_412" => BigDecimal("9007199254740993.2"))
+
+      expect(value).to eq(9_007_199_254_740_994)
+    end
+
+    it "does not accept hex notation as a number" do
+      value, error = compiler.evaluate!("ceiling(f_412)", "f_412" => "0x10")
+
+      expect(value).to be_nil
+      expect(error.code).to eq(Kula::Formula::Errors::NOT_COMPUTABLE)
     end
 
     # add_function declares a return type, not argument types, so a wrong-typed
@@ -156,10 +191,11 @@ RSpec.describe Kula::Formula::Compiler do
         .to eq([Kula::Formula::Errors::UNSUPPORTED_CONSTRUCT])
     end
 
+    # not_to be_valid would pass on the CASE rejection alone, saying nothing about
+    # whether the walk ever reached the branch.
     it "does not let CASE smuggle an excluded function past the whitelist" do
-      result = compiler.compile(%{CASE 1 WHEN 1 THEN left("abc", 1) ELSE 0 END})
-
-      expect(result).not_to be_valid
+      expect(compiler.compile(%{CASE 1 WHEN 1 THEN left("abc", 1) ELSE 0 END}).codes)
+        .to include(Kula::Formula::Errors::UNKNOWN_FUNCTION)
     end
 
     it "rejects a handle typed directly for a field that does not exist" do

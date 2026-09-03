@@ -116,12 +116,6 @@ module Kula
         handles(stored).select { |handle| known_handle?(handle) }
       end
 
-      # Handles the formula reads that name nothing known — a removed field, or
-      # one outside the author's scope.
-      def dangling(stored)
-        handles(stored).reject { |handle| known_handle?(handle) }
-      end
-
       def known_handle?(handle)
         @by_handle.key?(self.class.normalize_handle(handle))
       end

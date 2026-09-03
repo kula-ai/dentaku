@@ -66,13 +66,10 @@ module Kula
       # caller has to distinguish "waiting on a value" from "this formula is
       # broken", because those need different things said to the author.
       def evaluate!(stored, context = {})
-        value = calculator.evaluate!(stored, context)
-        # A nil result is never an answer — a function was handed something it
-        # could not read. Returning it with no diagnostic would leave the caller
-        # unable to tell that from a value it should store.
-        return [nil, Diagnostic.new(code: Errors::NOT_COMPUTABLE)] if value.nil?
-
-        [value, nil]
+        # nil is a legitimate answer, not a failure: a two-arg if whose predicate
+        # does not hold returns nil by design. The paths that genuinely cannot
+        # compute raise instead, and are mapped below.
+        [calculator.evaluate!(stored, context), nil]
       rescue ::Dentaku::ZeroDivisionError
         [nil, Diagnostic.new(code: Errors::DIVISION_BY_ZERO)]
       rescue ::Dentaku::UnboundVariableError => e
@@ -130,7 +127,9 @@ module Kula
       def unsupported_constructs(ast)
         found = []
         AstWalk.each_node(ast) do |node|
-          found << Diagnostic.new(code: Errors::UNSUPPORTED_CONSTRUCT, detail: {construct: AstWalk.function_name(node)}) if UNSUPPORTED_NODES.any? { |klass| node.is_a?(klass) }
+          next unless UNSUPPORTED_NODES.any? { |klass| node.is_a?(klass) }
+
+          found << Diagnostic.new(code: Errors::UNSUPPORTED_CONSTRUCT, detail: {construct: AstWalk.node_name(node)})
         end
         found.uniq(&:to_h)
       end
@@ -148,7 +147,7 @@ module Kula
       def function_names(node)
         found = []
         AstWalk.each_node(node) do |current|
-          found << AstWalk.function_name(current) if current.is_a?(::Dentaku::AST::Function)
+          found << AstWalk.node_name(current) if current.is_a?(::Dentaku::AST::Function)
         end
         found
       end
