@@ -115,5 +115,62 @@ RSpec.describe Kula::Formula::Compiler do
 
       expect(value).to eq("AB")
     end
+      it "makes the whole function surface available" do
+      value, = compiler.evaluate!(%{upper(trim("  ab  "))})
+
+      expect(value).to eq("AB")
+    end
+
+    # add_function declares a return type, not argument types, so a wrong-typed
+    # operand reaches the lambda. It used to raise NoMethodError straight past
+    # this method to the host.
+    it "reports a wrong-typed operand rather than raising" do
+      value, error = compiler.evaluate!("ceiling(f_412)", "f_412" => "abc")
+
+      expect(value).to be_nil
+      expect(error.code).to eq(Kula::Formula::Errors::NOT_COMPUTABLE)
+    end
+
+    # to_i on a non-number is 0, which reads back as 1970 — plausible-looking
+    # wrong data with no diagnostic at all.
+    it "does not read a wrong-typed operand as the epoch" do
+      value, error = compiler.evaluate!("year(f_412)", "f_412" => "abc")
+
+      expect(value).to be_nil
+      expect(error.code).to eq(Kula::Formula::Errors::NOT_COMPUTABLE)
+    end
+  end
+
+  describe "what the surface admits" do
+    # Installing onto a stock calculator leaves every dentaku built-in reachable.
+    # This is the whitelist, so it needs pinning.
+    it "rejects a dentaku built-in outside the catalog" do
+      expect(compiler.compile(%{left("abcdef", 3)}).codes)
+        .to eq([Kula::Formula::Errors::UNKNOWN_FUNCTION])
+    end
+
+    # CASE is not an AST::Function, so the whitelist never saw it, and its
+    # branches were invisible to both the whitelist and the type checker.
+    it "rejects CASE, which is not on the surface" do
+      expect(compiler.compile(%{CASE 1 WHEN 1 THEN 2 ELSE 3 END}).codes)
+        .to eq([Kula::Formula::Errors::UNSUPPORTED_CONSTRUCT])
+    end
+
+    it "does not let CASE smuggle an excluded function past the whitelist" do
+      result = compiler.compile(%{CASE 1 WHEN 1 THEN left("abc", 1) ELSE 0 END})
+
+      expect(result).not_to be_valid
+    end
+
+    it "rejects a handle typed directly for a field that does not exist" do
+      expect(compiler.compile("f_999 + 1").codes)
+        .to eq([Kula::Formula::Errors::DANGLING_REFERENCE])
+    end
+
+    # Not handle-shaped, so the old source scan never saw it.
+    it "rejects a bare field name someone typed without braces" do
+      expect(compiler.compile("revenue * 2").codes)
+        .to eq([Kula::Formula::Errors::DANGLING_REFERENCE])
+    end
   end
 end
