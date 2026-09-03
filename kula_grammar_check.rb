@@ -1,8 +1,9 @@
-# Acceptance harness for the Kula fork. Encodes R-1 (the PRD author's grammar
-# decisions) plus the two engine requirements dentaku upstream cannot meet.
+# Acceptance harness for the Kula fork: the grammar the formula language has to
+# support, plus the two engine requirements dentaku upstream cannot meet.
 #
 #   ruby -Ilib kula_grammar_check.rb
 require "dentaku"
+require "kula/formula"
 
 $pass = 0
 $fail = 0
@@ -29,24 +30,24 @@ end
 
 def calc = Dentaku::Calculator.new
 
-puts "\n== R-1: two-arg if returns empty when false =="
+puts "\n== two-arg if returns empty when false =="
 eq("if(1>0, 10)", 10)          { calc.evaluate!("if(1>0, 10)") }
 eq("if(1>2, 10) -> nil", nil)  { calc.evaluate!("if(1>2, 10)") }
 
-puts "\n== R-1: chained else if / else =="
+puts "\n== chained else if / else =="
 eq("first branch",  10) { calc.evaluate!("if(1>0, 10) else if(1>0, 20) else(30)") }
 eq("middle branch", 20) { calc.evaluate!("if(1>2, 10) else if(1>0, 20) else(30)") }
 eq("else branch",   30) { calc.evaluate!("if(1>2, 10) else if(2>3, 20) else(30)") }
 eq("chain with no else -> nil", nil) { calc.evaluate!("if(1>2, 10) else if(2>3, 20)") }
 
-puts "\n== R-1: chain equals the nested form =="
+puts "\n== chain equals the nested form =="
 eq("chain",  20) { calc.evaluate!("if(1>2, 10) else if(1>0, 20) else(30)") }
 eq("nested", 20) { calc.evaluate!("if(1>2, 10, if(1>0, 20, 30))") }
 
-puts "\n== R-1: newlines and arbitrary whitespace between else and if =="
+puts "\n== newlines and arbitrary whitespace between else and if =="
 eq("multi-line chain", 20) { calc.evaluate!("if(1>2, 10)\n  else   if(1>0, 20)\n  else(30)") }
 
-puts "\n== R-1: structural errors are rejected =="
+puts "\n== structural errors are rejected =="
 check("orphan else() is a parse error") do
   begin; calc.evaluate!("else(30)"); false; rescue Dentaku::ParseError, Dentaku::TokenizerError; :ok; end
 end
@@ -101,7 +102,13 @@ eq("arithmetic",    7)  { calc.evaluate!("1 + 2 * 3") }
 eq("3-arg if",      10) { calc.evaluate!("if(1>0, 10, 20)") }
 eq("identifiers",   107){ calc.evaluate!("f_base + f_bonus", {"f_base" => 100, "f_bonus" => 7}) }
 eq("dependencies",  %w[a b c]) { calc.dependencies("a * b + c") }
-eq("case/when",     "y"){ calc.evaluate!("case a when 1 then 'y' else 'n' end", {"a" => 1}) }
+# The grammar parses CASE, but it is not on the surface we expose: it is not an
+# AST::Function, so the whitelist never sees it, and it is untyped. Both halves
+# are asserted so the split stays deliberate.
+eq("case/when parses",   "y"){ calc.evaluate!("case a when 1 then 'y' else 'n' end", {"a" => 1}) }
+eq("case/when rejected", [Kula::Formula::Errors::UNSUPPORTED_CONSTRUCT]) do
+  Kula::Formula::Compiler.new.compile("case 1 when 1 then 2 else 3 end").codes
+end
 
 puts "\n#{'=' * 60}\n  #{$pass} passed, #{$fail} failed\n#{'=' * 60}\n"
 exit($fail.zero? ? 0 : 1)

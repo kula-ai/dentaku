@@ -15,13 +15,24 @@ module Kula
       def children(node)
         return [] if node.nil?
 
-        if node.respond_to?(:args) && node.args
+        if node.is_a?(::Dentaku::AST::Case)
+          # Case exposes neither args nor left/right, so without this every node
+          # underneath one is invisible to the whitelist and the type checker.
+          [node.switch, *node.conditions, node.else].compact
+        elsif node.respond_to?(:args) && node.args
           Array(node.args)
         elsif node.respond_to?(:left)
           [node.left, (node.right if node.respond_to?(:right))].compact
         else
           []
         end
+      end
+
+      # Dentaku names a function class after the function, so the class name is
+      # the registration name. Kept here so the whitelist and the type checker
+      # cannot drift on how they derive it.
+      def function_name(node)
+        node.class.name.to_s.split("::").last.to_s.downcase
       end
 
       # Every node in the tree, parents before children.

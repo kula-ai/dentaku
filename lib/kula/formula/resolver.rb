@@ -76,9 +76,10 @@ module Kula
           acc[key] = ref
         end
         @by_handle = @references.each_with_object({}) do |ref, acc|
-          raise InvalidReference.new(ref, "more than one field uses handle #{ref.handle.inspect}") if acc.key?(ref.handle)
+          indexed = self.class.normalize_handle(ref.handle)
+          raise InvalidReference.new(ref, "more than one field uses handle #{ref.handle.inspect}") if acc.key?(indexed)
 
-          acc[ref.handle] = ref
+          acc[indexed] = ref
         end
       end
 
@@ -104,7 +105,7 @@ module Kula
         stored.to_s.gsub(/#{LITERAL_PATTERN}|#{HANDLE_PATTERN}/) do |match|
           next match if literal?(match)
 
-          reference = @by_handle[match]
+          reference = @by_handle[self.class.normalize_handle(match)]
           reference ? "{#{reference.token}}" : match
         end
       end
@@ -112,13 +113,25 @@ module Kula
       # Handles the formula reads, in first-appearance order. Persisting this
       # spares every later reader from re-parsing the source.
       def dependencies(stored)
-        handles(stored).select { |handle| @by_handle.key?(handle) }
+        handles(stored).select { |handle| known_handle?(handle) }
       end
 
       # Handles the formula reads that name nothing known — a removed field, or
       # one outside the author's scope.
       def dangling(stored)
-        handles(stored).reject { |handle| @by_handle.key?(handle) }
+        handles(stored).reject { |handle| known_handle?(handle) }
+      end
+
+      def known_handle?(handle)
+        @by_handle.key?(self.class.normalize_handle(handle))
+      end
+
+      # Dentaku downcases every identifier it parses unless the calculator is
+      # built case-sensitive, so an index built from the handle as given would
+      # miss on any handle carrying an uppercase letter — and a missed type
+      # lookup reads as "could not determine", which is allowed through.
+      def self.normalize_handle(handle)
+        handle.to_s.downcase
       end
 
       # Blanks out quoted text so nothing inside it is read as syntax. Replaced

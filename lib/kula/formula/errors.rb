@@ -15,6 +15,7 @@ module Kula
       TOO_MANY_REFERENCES = "err_formula_too_many_references"
       TOO_DEEPLY_NESTED = "err_formula_too_deeply_nested"
       UNKNOWN_FUNCTION = "err_formula_unknown_function"
+      UNSUPPORTED_CONSTRUCT = "err_formula_unsupported_construct"
       DIVISION_BY_ZERO = "err_formula_division_by_zero"
       NOT_COMPUTABLE = "err_formula_not_computable"
       RESULT_TYPE_MISMATCH = "err_formula_result_type"

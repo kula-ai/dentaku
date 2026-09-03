@@ -33,7 +33,7 @@ module Kula
 
       def initialize(references)
         @types = references.each_with_object({}) do |reference, acc|
-          acc[reference.handle] = normalize(reference.kind)
+          acc[Resolver.normalize_handle(reference.handle)] = normalize(reference.kind)
         end
       end
 
@@ -44,7 +44,7 @@ module Kula
 
         case node
         when ::Dentaku::AST::Identifier
-          @types[node.identifier.to_s]
+          @types[Resolver.normalize_handle(node.identifier)]
         when ::Dentaku::AST::If
           unify(result_type(node.left), result_type(node.right))
         when ::Dentaku::AST::Nil
@@ -88,7 +88,7 @@ module Kula
 
         type = node.type if node.respond_to?(:type)
         TYPES.include?(type) ? type : nil
-      rescue ::StandardError
+      rescue ::Dentaku::Error, ::Dentaku::ArgumentError
         # A node whose type depends on operands dentaku cannot resolve — fall
         # back to walking the children ourselves.
         nil
@@ -106,7 +106,7 @@ module Kula
       def pass_through?(node)
         return false unless node.is_a?(::Dentaku::AST::Function)
 
-        PASS_THROUGH.include?(node.class.name.to_s.split("::").last.to_s.downcase)
+        PASS_THROUGH.include?(AstWalk.function_name(node))
       end
 
       def children(node)

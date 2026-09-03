@@ -34,8 +34,12 @@ module Kula
 
       # Handles in the order they must be computed: a formula never runs before
       # something it reads. Raises if the graph cycles, so check first.
+      #
+      # Only handles that have a formula. TSort also emits the plain input fields
+      # it discovers as dependencies, and a caller looping this to recompute would
+      # otherwise be handed handles with nothing to compute.
       def evaluation_order
-        tsort
+        tsort.select { |handle| @edges.key?(handle) }
       end
 
       def tsort_each_node(&block)

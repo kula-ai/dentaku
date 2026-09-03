@@ -21,7 +21,9 @@ module Kula
     #   result.dependencies  # => ["f_412"]
     #
     # Compiling never raises on bad input: a formula an author is halfway through
-    # typing is the normal case, not an exception.
+    # typing is the normal case, not an exception. A caller mistake still raises:
+    # an unknown expected_type at check time, or colliding references at
+    # construction.
     class Compiler
       def initialize(references: [], zone: Catalog::DEFAULT_ZONE)
         @resolver = Resolver.new(references)
@@ -43,7 +45,8 @@ module Kula
           source: source,
           stored: stored,
           dependencies: @resolver.dependencies(stored),
-          diagnostics: dangling(stored) + unknown_functions(ast) + type_checker.check(ast, expected: expected_type),
+          diagnostics: unknown_identifiers(ast) + unsupported_constructs(ast) +
+            unknown_functions(ast) + type_checker.check(ast, expected: expected_type),
           ast: ast
         )
       rescue Resolver::UnknownToken => e
@@ -63,16 +66,25 @@ module Kula
       # caller has to distinguish "waiting on a value" from "this formula is
       # broken", because those need different things said to the author.
       def evaluate!(stored, context = {})
-        [calculator.evaluate!(stored, context), nil]
+        value = calculator.evaluate!(stored, context)
+        # A nil result is never an answer — a function was handed something it
+        # could not read. Returning it with no diagnostic would leave the caller
+        # unable to tell that from a value it should store.
+        return [nil, Diagnostic.new(code: Errors::NOT_COMPUTABLE)] if value.nil?
+
+        [value, nil]
       rescue ::Dentaku::ZeroDivisionError
         [nil, Diagnostic.new(code: Errors::DIVISION_BY_ZERO)]
       rescue ::Dentaku::UnboundVariableError => e
         [nil, Diagnostic.new(code: Errors::NOT_COMPUTABLE, detail: {unbound: Array(e.unbound_variables)})]
-      rescue ::Dentaku::ArgumentError, ::Dentaku::Error
-        # Dentaku::ArgumentError descends from ::ArgumentError rather than
-        # Dentaku::Error, so it needs naming: it is what an operation over an
-        # unanswered field raises, which is "not computable yet".
+      rescue ::Dentaku::ArgumentError
+        # Descends from ::ArgumentError rather than Dentaku::Error, so it needs
+        # naming: it is what an operation over an unanswered field raises.
         [nil, Diagnostic.new(code: Errors::NOT_COMPUTABLE)]
+      rescue ::Dentaku::Error => e
+        # Anything else is a broken formula, not one waiting on a value. Reporting
+        # it as "not computable" would tell the author to do nothing.
+        [nil, Diagnostic.new(code: Errors::SYNTAX, detail: {message: e.message})]
       end
 
       private
@@ -95,10 +107,32 @@ module Kula
       # rewrite, so it reaches storage unchecked. Without this it saves clean and
       # fails at evaluation as "not computable yet" — telling the author we are
       # waiting on a field that does not exist.
-      def dangling(stored)
-        @resolver.dangling(stored).map do |handle|
-          Diagnostic.new(code: Errors::DANGLING_REFERENCE, detail: {handle: handle})
+      #
+      # Read off the AST rather than scanned out of the source, so a name that is
+      # not handle-shaped — someone typing a field name without braces — is caught
+      # by the same check.
+      def unknown_identifiers(ast)
+        names = []
+        AstWalk.each_node(ast) do |node|
+          names << node.identifier.to_s if node.is_a?(::Dentaku::AST::Identifier)
         end
+
+        names.uniq.reject { |name| @resolver.known_handle?(name) }
+          .map { |name| Diagnostic.new(code: Errors::DANGLING_REFERENCE, detail: {handle: name}) }
+      end
+
+      # Dentaku parses CASE unconditionally and it is not an AST::Function, so the
+      # whitelist never sees it. It is not on the documented surface, and it is
+      # untyped — Node#type is nil, so it satisfies any expected_type — so it is
+      # rejected rather than left as an undocumented way in.
+      UNSUPPORTED_NODES = [::Dentaku::AST::Case].freeze
+
+      def unsupported_constructs(ast)
+        found = []
+        AstWalk.each_node(ast) do |node|
+          found << Diagnostic.new(code: Errors::UNSUPPORTED_CONSTRUCT, detail: {construct: AstWalk.function_name(node)}) if UNSUPPORTED_NODES.any? { |klass| node.is_a?(klass) }
+        end
+        found.uniq(&:to_h)
       end
 
       # Installing onto a stock calculator leaves every dentaku built-in reachable
@@ -114,7 +148,7 @@ module Kula
       def function_names(node)
         found = []
         AstWalk.each_node(node) do |current|
-          found << current.class.name.to_s.split("::").last.downcase if current.is_a?(::Dentaku::AST::Function)
+          found << AstWalk.function_name(current) if current.is_a?(::Dentaku::AST::Function)
         end
         found
       end
