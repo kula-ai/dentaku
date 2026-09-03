@@ -198,6 +198,22 @@ RSpec.describe Kula::Formula::Compiler do
         .to include(Kula::Formula::Errors::UNKNOWN_FUNCTION)
     end
 
+    # Nine characters that pass every budget and then ask Ruby for a number with
+    # hundreds of millions of digits. Limits bounds the source, not the result.
+    it "rejects exponentiation, which no budget can bound" do
+      expect(compiler.compile("9^9^9^9").codes)
+        .to eq([Kula::Formula::Errors::UNSUPPORTED_CONSTRUCT])
+    end
+
+    it "rejects the bitwise shifts, which are not on the surface either" do
+      expect(compiler.compile("1 << 8").codes)
+        .to eq([Kula::Formula::Errors::UNSUPPORTED_CONSTRUCT])
+    end
+
+    it "still admits ordinary arithmetic" do
+      expect(compiler.compile("(f_412 + 1) * 3")).to be_valid
+    end
+
     it "rejects a handle typed directly for a field that does not exist" do
       expect(compiler.compile("f_999 + 1").codes)
         .to eq([Kula::Formula::Errors::DANGLING_REFERENCE])

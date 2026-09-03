@@ -122,7 +122,19 @@ module Kula
       # whitelist never sees it. It is not on the documented surface, and it is
       # untyped — Node#type is nil, so it satisfies any expected_type — so it is
       # rejected rather than left as an undocumented way in.
-      UNSUPPORTED_NODES = [::Dentaku::AST::Case].freeze
+      # Case is parsed unconditionally by dentaku and is not an AST::Function, so
+      # the whitelist never sees it. Exponentiation and the bitwise operators are
+      # the same problem in operator form: they are not on the documented surface,
+      # and `9^9^9^9` is nine characters that passes every budget in Limits and
+      # then asks Ruby for a number with hundreds of millions of digits —
+      # synchronously, wherever the host evaluates. Budgets bound the source, not
+      # the result, so the operator has to go.
+      UNSUPPORTED_NODES = [
+        ::Dentaku::AST::Case,
+        ::Dentaku::AST::Exponentiation,
+        ::Dentaku::AST::BitwiseShiftLeft,
+        ::Dentaku::AST::BitwiseShiftRight
+      ].freeze
 
       def unsupported_constructs(ast)
         found = []
