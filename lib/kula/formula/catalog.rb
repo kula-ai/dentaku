@@ -91,6 +91,26 @@ module Kula
             difference(later, earlier, unit, zone)
           })
 
+          # The only way to name a date the form does not already hold. Without
+          # it "the end of this year" can only be written as a literal, which is
+          # correct until the year turns and silently wrong after — so a formula
+          # meant to recur had an expiry date nobody could see.
+          calculator.add_function(:date, :numeric, ->(year, month, day) {
+            next nil if year.nil? || month.nil? || day.nil?
+
+            parts = [as_number(year), as_number(month), as_number(day)]
+            next nil if parts.any?(&:nil?)
+
+            built = begin
+              ::Date.new(*parts.map(&:to_i))
+            rescue ::Date::Error
+              # A day that does not exist — 31 February — is not computable
+              # rather than an authoring error: the parts can be fields.
+              nil
+            end
+            built && from_date(built, zone)
+          })
+
           calculator.add_function(:year, :numeric, ->(ts) { to_date(ts, zone)&.year })
           calculator.add_function(:month, :numeric, ->(ts) { to_date(ts, zone)&.month })
           calculator.add_function(:day, :numeric, ->(ts) { to_date(ts, zone)&.day })
