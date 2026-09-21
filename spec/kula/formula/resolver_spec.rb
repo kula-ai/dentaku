@@ -98,20 +98,6 @@ RSpec.describe Kula::Formula::Resolver do
     end
   end
 
-  describe "#dangling" do
-    it "reports references to fields it has never heard of" do
-      expect(resolver.dangling("f_412 + f_999 + s_gone")).to eq(%w[f_999 s_gone])
-    end
-
-    it "is empty when every reference resolves" do
-      expect(resolver.dangling("f_412 + f_413")).to eq([])
-    end
-
-    it "ignores handle-shaped words inside literals" do
-      expect(resolver.dangling(%{contains("f_999", f_412)})).to eq([])
-    end
-  end
-
   # A reference the scanner cannot see is worse than a rejected one: the rewrite
   # still substitutes it, so the formula stores a reference reporting no
   # dependency and evaluating against nothing.

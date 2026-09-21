@@ -1,5 +1,8 @@
 # frozen_string_literal: true
 
+require "bigdecimal"
+require "bigdecimal/util"
+
 module Kula
   module Formula
     # The function surface a formula may use.
@@ -46,8 +49,26 @@ module Kula
         private
 
         def numeric(calculator)
-          calculator.add_function(:ceiling, :numeric, ->(number) { number&.ceil })
-          calculator.add_function(:floor, :numeric, ->(number) { number&.floor })
+          calculator.add_function(:ceiling, :numeric, ->(number) { as_number(number)&.ceil })
+          calculator.add_function(:floor, :numeric, ->(number) { as_number(number)&.floor })
+        end
+
+        # add_function declares a return type, not argument types, and a field's
+        # stored value can disagree with its declared kind — so a wrong-typed
+        # operand reaches these lambdas. nil stays nil (an unanswered field), but
+        # anything else that is not a number raises: without this, ceiling("abc")
+        # is a NoMethodError past evaluate! to the host, and year("abc") reads 0
+        # as 1970. Dentaku::ArgumentError because evaluate! already maps it.
+        #
+        # BigDecimal rather than Float: dentaku carries decimals as BigDecimal, and
+        # Float would cap precision at ~15 digits and quietly accept "0x10".
+        def as_number(value)
+          return nil if value.nil?
+          return value if value.is_a?(::Numeric)
+
+          ::Kernel::BigDecimal(value.to_s)
+        rescue ::ArgumentError, ::TypeError
+          raise ::Dentaku::ArgumentError.for(:incompatible_type, value: value)
         end
 
         def dates(calculator, zone)
@@ -58,19 +79,21 @@ module Kula
           calculator.add_function(:dateadd, :numeric, ->(timestamp, amount, unit) {
             next nil if timestamp.nil? || amount.nil?
 
-            moved = advance(to_date(timestamp, zone), amount.to_i, unit)
+            start = to_date(timestamp, zone)
+            step = as_number(amount)
+            moved = start && step && advance(start, step.to_i, unit)
             moved && from_date(moved, zone)
           })
 
           calculator.add_function(:datediff, :numeric, ->(later, earlier, unit) {
             next nil if later.nil? || earlier.nil?
 
-            difference(later.to_i, earlier.to_i, unit, zone)
+            difference(later, earlier, unit, zone)
           })
 
-          calculator.add_function(:year, :numeric, ->(ts) { ts && to_date(ts, zone).year })
-          calculator.add_function(:month, :numeric, ->(ts) { ts && to_date(ts, zone).month })
-          calculator.add_function(:day, :numeric, ->(ts) { ts && to_date(ts, zone).day })
+          calculator.add_function(:year, :numeric, ->(ts) { to_date(ts, zone)&.year })
+          calculator.add_function(:month, :numeric, ->(ts) { to_date(ts, zone)&.month })
+          calculator.add_function(:day, :numeric, ->(ts) { to_date(ts, zone)&.day })
         end
 
         def text(calculator)
@@ -113,7 +136,10 @@ module Kula
         end
 
         def to_date(timestamp, zone)
-          time = ::Time.at(timestamp.to_i)
+          seconds = as_number(timestamp)
+          return nil if seconds.nil?
+
+          time = ::Time.at(seconds.to_i)
           (time.respond_to?(:in_time_zone) ? time.in_time_zone(zone) : time.utc).to_date
         end
 
@@ -141,7 +167,11 @@ module Kula
         # seconds disagrees with day() across a midnight boundary, and floors
         # negatives asymmetrically so datediff(a, b) != -datediff(b, a).
         def difference(later, earlier, unit, zone)
-          days = (to_date(later, zone) - to_date(earlier, zone)).to_i
+          to = to_date(later, zone)
+          from = to_date(earlier, zone)
+          return nil if to.nil? || from.nil?
+
+          days = (to - from).to_i
 
           case unit.to_s.downcase
           when "day", "days" then days
@@ -157,10 +187,10 @@ module Kula
         # way round: the partial-month adjustment always rounds toward the past,
         # so computing both directions independently gives -3 against 2.
         def months_between(later, earlier, zone)
-          return -months_between(earlier, later, zone) if later < earlier
-
           a = to_date(later, zone)
           b = to_date(earlier, zone)
+          return -months_between(earlier, later, zone) if a < b
+
           ((a.year - b.year) * 12) + (a.month - b.month) - (a.day < b.day ? 1 : 0)
         end
       end

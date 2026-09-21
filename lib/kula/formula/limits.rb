@@ -24,8 +24,11 @@ module Kula
         countable = Resolver.outside_literals(text)
         # Both notations count: an author types {Token}, an API client may submit
         # the handle form it was given, and the cap has to mean the same for each.
+        # Handles counted only where a token did not already claim the text, or a
+        # field literally named f_412 would count twice and the cap would mean
+        # something different depending on what fields are called.
         references = countable.scan(Resolver::TOKEN_PATTERN).size +
-          countable.scan(Resolver::HANDLE_PATTERN).size
+          countable.gsub(Resolver::TOKEN_PATTERN, " ").scan(Resolver::HANDLE_PATTERN).size
         found << over(Errors::TOO_MANY_REFERENCES, references, MAX_REFERENCES) if references > MAX_REFERENCES
 
         depth = max_depth(countable)

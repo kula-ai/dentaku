@@ -99,4 +99,15 @@ RSpec.describe Kula::Formula::TypeChecker do
       expect(checker.check(calculator.ast(%{upper(f_str)}), expected: nil)).to be_empty
     end
   end
+
+  # Dentaku downcases identifiers unless the calculator is built case-sensitive,
+  # so an index built from the handle as given missed on any uppercase letter —
+  # and a missed lookup reads as "could not determine", which is let through.
+  it "still checks a reference whose handle carries an uppercase letter" do
+    reference = Kula::Formula::Resolver::Reference.new(handle: "f_A1", token: "Notes", kind: :string)
+    compiler = Kula::Formula::Compiler.new(references: [reference])
+
+    expect(compiler.compile("{Notes}", expected_type: :numeric).codes)
+      .to eq([Kula::Formula::Errors::RESULT_TYPE_MISMATCH])
+  end
 end
