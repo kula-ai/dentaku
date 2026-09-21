@@ -9,13 +9,56 @@ RSpec.describe Kula::Formula::TypeChecker do
     [
       ref.new(handle: "f_num", token: "Salary", kind: :numeric),
       ref.new(handle: "f_str", token: "Title", kind: :string),
-      ref.new(handle: "f_unknown", token: "Mystery", kind: nil)
+      ref.new(handle: "f_unknown", token: "Mystery", kind: nil),
+      ref.new(handle: "f_date", token: "Joining date", kind: :date)
     ]
   end
 
   let(:calculator) { Kula::Formula::Catalog.install(Dentaku::Calculator.new, zone: "UTC") }
 
   def type_of(source) = checker.result_type(calculator.ast(source))
+
+  # A date is stored as an integer, but reading it as a number put a salary in a
+  # date field as 1970-01-02 and an epoch in a currency field as a billion in
+  # money — both with no diagnostic at all.
+  describe "dates" do
+    it "keeps a date field's own type" do
+      expect(type_of("f_date")).to eq(:date)
+    end
+
+    it "types the functions that produce a date" do
+      expect(type_of("today()")).to eq(:date)
+      expect(type_of(%{dateadd(f_date, 90, "day")})).to eq(:date)
+    end
+
+    it "types the functions that read a date as numbers" do
+      expect(type_of(%{datediff(f_date, today(), "day")})).to eq(:numeric)
+      expect(type_of("year(f_date)")).to eq(:numeric)
+    end
+
+    it "refuses arithmetic over a date, which reports itself numeric whatever it was given" do
+      expect(checker.check(calculator.ast("f_date + 90"), expected: :date).map(&:code))
+        .to eq([Kula::Formula::Errors::RESULT_TYPE_MISMATCH])
+      expect(checker.check(calculator.ast("f_date + f_num"), expected: :numeric).map(&:code))
+        .to eq([Kula::Formula::Errors::RESULT_TYPE_MISMATCH])
+    end
+
+    it "refuses a plain number where a date belongs, and a date where a number belongs" do
+      expect(checker.check(calculator.ast("f_num"), expected: :date).map(&:code))
+        .to eq([Kula::Formula::Errors::RESULT_TYPE_MISMATCH])
+      expect(checker.check(calculator.ast("f_date"), expected: :numeric).map(&:code))
+        .to eq([Kula::Formula::Errors::RESULT_TYPE_MISMATCH])
+    end
+
+    it "accepts the date arithmetic that says what unit it means" do
+      expect(checker.check(calculator.ast(%{dateadd(f_date, 90, "day")}), expected: :date)).to be_empty
+      expect(checker.check(calculator.ast(%{datediff(f_date, today(), "day")}), expected: :numeric)).to be_empty
+    end
+
+    it "still compares two dates as a condition" do
+      expect(type_of("f_date > today()")).to eq(:logical)
+    end
+  end
 
   describe "#result_type" do
     it "reads a literal's own type" do

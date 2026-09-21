@@ -112,6 +112,29 @@ RSpec.describe Kula::Formula::Catalog do
     it "returns today in the supplied zone" do
       expect(calculator.evaluate!("year(today())")).to eq(Time.now.utc.year)
     end
+
+    # Without a constructor, "the end of this year" can only be written as a
+    # literal date, which is right until the year turns and silently wrong after.
+    describe "date()" do
+      it "builds a timestamp from its parts" do
+        expect(calculator.evaluate!("year(date(2027, 3, 1))")).to eq(2027)
+        expect(calculator.evaluate!("month(date(2027, 3, 1))")).to eq(3)
+        expect(calculator.evaluate!("day(date(2027, 3, 1))")).to eq(1)
+      end
+
+      it "composes with the rest of the date functions" do
+        expect(calculator.evaluate!(%{datediff(date(year(#{timestamp}) + 1, 1, 1), #{timestamp}, "days")})).to eq(351)
+      end
+
+      # The parts can be fields, and an unanswered field arrives as nil.
+      it "is not computable when a part is unanswered" do
+        expect(calculator.evaluate!("date(2027, 3, day_of)", "day_of" => nil)).to be_nil
+      end
+
+      it "is not computable for a day that does not exist" do
+        expect(calculator.evaluate!("date(2027, 2, 31)")).to be_nil
+      end
+    end
   end
 
   describe "text" do
