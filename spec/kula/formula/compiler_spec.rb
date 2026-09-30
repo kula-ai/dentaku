@@ -184,6 +184,37 @@ RSpec.describe Kula::Formula::Compiler do
         .to eq([Kula::Formula::Errors::UNKNOWN_FUNCTION])
     end
 
+    # A *args lambda has arity -1, so the parser checked nothing: date(2026, 4)
+    # compiled clean, saved green, and raised at call time -- reaching the
+    # recruiter as a field that would not compute rather than the author as a
+    # formula to fix. round(1, 2, 3) was refused all along, being fixed-arity.
+    it "rejects a variadic function given a count it does not take" do
+      expect(compiler.compile("date(2026, 4)").codes).to eq([Kula::Formula::Errors::SYNTAX])
+      expect(compiler.compile("date(2026, 4, 25, 1)").codes).to eq([Kula::Formula::Errors::SYNTAX])
+      expect(compiler.compile("days_between(1, 2, 3)").codes).to eq([Kula::Formula::Errors::SYNTAX])
+    end
+
+    it "names the function and what it takes" do
+      detail = compiler.compile("date(2026, 4)").diagnostics.first.detail
+
+      expect(detail).to eq({function: "date", given: 2, expects: [1, 3]})
+    end
+
+    it "accepts every count a variadic function does take" do
+      expect(compiler.compile(%{date("2026-04-25")})).to be_valid
+      expect(compiler.compile("date(2026, 4, 25)")).to be_valid
+      expect(compiler.compile("days_between(1)")).to be_valid
+      expect(compiler.compile("days_between(1, 2)")).to be_valid
+    end
+
+    # concat, min, max and coalesce mean whatever number they are given, so they
+    # are absent from the table and must stay unrestricted.
+    it "leaves a genuinely variadic function alone" do
+      expect(compiler.compile(%{concat("a", "b", "c", "d")})).to be_valid
+      expect(compiler.compile("coalesce(1, 2, 3, 4)")).to be_valid
+      expect(compiler.compile("min(1, 2, 3)")).to be_valid
+    end
+
     # CASE is not an AST::Function, so the whitelist never saw it, and its
     # branches were invisible to both the whitelist and the type checker.
     it "rejects CASE, which is not on the surface" do

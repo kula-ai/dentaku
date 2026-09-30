@@ -39,6 +39,25 @@ module Kula
 
       ALL = (BUILT_IN + ADDED).sort.freeze
 
+      # The functions registered variadically, with the argument counts they
+      # actually accept. A fixed-arity lambda is arity-checked by the parser, so
+      # round(1, 2, 3) is refused while the author is typing; a *args one has
+      # arity -1 and nothing checked it, so date(2026, 4) parsed clean, saved
+      # green, and raised at call time -- reaching the recruiter as a field that
+      # would not compute rather than the author as a formula to fix.
+      #
+      # Beside the registrations, because the count a function takes is part of
+      # declaring it. A function absent here is unrestricted: concat, min, max
+      # and coalesce mean whatever number they are given.
+      VARIADIC_ARITY = {
+        "date" => [1, 3].freeze,
+        # from, to = args -- the second is optional and counts to today. A third
+        # was silently dropped.
+        "days_between" => [1, 2].freeze,
+        "months_between" => [1, 2].freeze,
+        "age_years" => [1, 2].freeze
+      }.freeze
+
       class << self
         def install(calculator, zone: DEFAULT_ZONE)
           numeric(calculator)

@@ -46,7 +46,7 @@ module Kula
           stored: stored,
           dependencies: @resolver.dependencies(stored),
           diagnostics: unknown_identifiers(ast) + unsupported_constructs(ast) +
-            unknown_functions(ast) + type_checker.check(ast, expected: expected_type),
+            unknown_functions(ast) + variadic_arity(ast) + type_checker.check(ast, expected: expected_type),
           ast: ast
         )
       rescue Resolver::UnknownToken => e
@@ -154,6 +154,28 @@ module Kula
         function_names(ast).reject { |name| Catalog::ALL.include?(name) }
           .uniq
           .map { |name| Diagnostic.new(code: Errors::UNKNOWN_FUNCTION, detail: {function: name}) }
+      end
+
+      # The arity the parser could not check. Reported as SYNTAX, which is what a
+      # fixed-arity function's wrong count already answers -- the same mistake
+      # should not carry two codes depending on how the function happens to be
+      # registered.
+      def variadic_arity(ast)
+        found = []
+        AstWalk.each_node(ast) do |node|
+          next unless node.is_a?(::Dentaku::AST::Function)
+
+          name = AstWalk.node_name(node)
+          allowed = Catalog::VARIADIC_ARITY[name]
+          next if allowed.nil?
+
+          given = AstWalk.children(node).size
+          next if allowed.include?(given)
+
+          found << Diagnostic.new(code: Errors::SYNTAX,
+            detail: {function: name, given: given, expects: allowed})
+        end
+        found.uniq(&:to_h)
       end
 
       def function_names(node)
