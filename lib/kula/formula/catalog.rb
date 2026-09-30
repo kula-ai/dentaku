@@ -46,6 +46,30 @@ module Kula
           calculator
         end
 
+        # Public: the host parses a typed date too — a field's DEFAULT value is
+        # authored in the drawer, not in a formula — and which shapes are
+        # accepted has to be one rule, not two that drift.
+        def parse_date(text)
+          return nil if text.nil?
+
+          value = text.to_s.strip
+          return nil if value.empty?
+          # Both parts could be a month, so there is no reading to prefer.
+          # parsedate(text, format) is how an author says which they meant.
+          if (parts = AMBIGUOUS_NUMERIC.match(value)) && parts[1].to_i <= 12 && parts[2].to_i <= 12
+            return nil
+          end
+
+          begin
+            # ISO first and explicitly: Date.parse reads 2026-04-01 correctly, but
+            # stating it keeps the one format every system agrees on independent
+            # of what Date.parse decides for the rest.
+            ISO.match?(value) ? ::Date.iso8601(value) : ::Date.parse(value)
+          rescue ::Date::Error, ::ArgumentError
+            nil
+          end
+        end
+
         private
 
         def numeric(calculator)
@@ -205,27 +229,6 @@ module Kula
         # accepted.
         AMBIGUOUS_NUMERIC = %r{\A(\d{1,2})[/-](\d{1,2})[/-](\d{4})\z}
         ISO = /\A\d{4}-\d{1,2}-\d{1,2}\z/
-
-        def parse_date(text)
-          return nil if text.nil?
-
-          value = text.to_s.strip
-          return nil if value.empty?
-          # Both parts could be a month, so there is no reading to prefer.
-          # parsedate(text, format) is how an author says which they meant.
-          if (parts = AMBIGUOUS_NUMERIC.match(value)) && parts[1].to_i <= 12 && parts[2].to_i <= 12
-            return nil
-          end
-
-          begin
-            # ISO first and explicitly: Date.parse reads 2026-04-01 correctly, but
-            # stating it keeps the one format every system agrees on independent
-            # of what Date.parse decides for the rest.
-            ISO.match?(value) ? ::Date.iso8601(value) : ::Date.parse(value)
-          rescue ::Date::Error, ::ArgumentError
-            nil
-          end
-        end
 
         # The tokens an author writes, mapped onto strptime's. No width variants:
         # strptime's %d and %m already read both "1" and "01", and the %-d form

@@ -261,6 +261,30 @@ RSpec.describe Kula::Formula::Catalog do
     end
   end
 
+  # The host parses a typed date too: a field's DEFAULT value is authored in the
+  # drawer rather than in a formula, and which shapes are accepted has to be one
+  # rule rather than two that drift.
+  describe ".parse_date" do
+    it "is public, because the host reads it" do
+      expect(described_class).to respond_to(:parse_date)
+    end
+
+    it "reads every unambiguous shape" do
+      expect(described_class.parse_date("2026-04-25")).to eq(Date.new(2026, 4, 25))
+      expect(described_class.parse_date("25/04/2026")).to eq(Date.new(2026, 4, 25))
+      expect(described_class.parse_date("25 Apr 2026")).to eq(Date.new(2026, 4, 25))
+    end
+
+    it "refuses the shape with two readings" do
+      expect(described_class.parse_date("01/04/2026")).to be_nil
+    end
+
+    it "refuses text that is not a date" do
+      expect(described_class.parse_date("not a date")).to be_nil
+      expect(described_class.parse_date(nil)).to be_nil
+    end
+  end
+
   describe "the published surface" do
     it "lists every function once, sorted" do
       expect(described_class::ALL).to eq(described_class::ALL.uniq.sort)
