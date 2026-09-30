@@ -24,7 +24,7 @@ module Kula
 
       # Registered on top of dentaku's built-ins.
       ADDED = %w[
-        ceiling floor date dateadd datediff year month day today
+        ceiling floor date parsedate dateadd datediff year month day today
         equaltext upper lower trim contains coalesce ifnull isnull
       ].freeze
 
@@ -95,20 +95,32 @@ module Kula
           # it "the end of this year" can only be written as a literal, which is
           # correct until the year turns and silently wrong after — so a formula
           # meant to recur had an expiry date nobody could see.
-          calculator.add_function(:date, :numeric, ->(year, month, day) {
-            next nil if year.nil? || month.nil? || day.nil?
+          # Either three parts or one piece of text. The parts form cannot be
+          # misread; the text form is the one an author reaches for, and it is
+          # deliberately liberal about every shape that HAS one reading and
+          # refuses the single shape that has two.
+          calculator.add_function(:date, :numeric, ->(*args) {
+            built =
+              case args.length
+              when 1 then parse_date(args.first)
+              when 3 then build_date(*args)
+              else raise ::Dentaku::ArgumentError.for(:wrong_number_of_arguments, function_name: "date")
+              end
+            built && from_date(built, zone)
+          })
 
-            parts = [as_number(year), as_number(month), as_number(day)]
-            next nil if parts.any?(&:nil?)
+          # For the shape date() refuses. The format is the author's answer to
+          # "which of these two numbers is the month", so it is theirs to give
+          # rather than ours to guess.
+          calculator.add_function(:parsedate, :numeric, ->(text, format) {
+            next nil if text.nil? || format.nil?
 
-            built = begin
-              ::Date.new(*parts.map(&:to_i))
-            rescue ::Date::Error
-              # A day that does not exist — 31 February — is not computable
-              # rather than an authoring error: the parts can be fields.
+            parsed = begin
+              ::Date.strptime(text.to_s.strip, to_strptime(format.to_s))
+            rescue ::Date::Error, ::ArgumentError
               nil
             end
-            built && from_date(built, zone)
+            parsed && from_date(parsed, zone)
           })
 
           calculator.add_function(:year, :numeric, ->(ts) { to_date(ts, zone)&.year })
@@ -169,6 +181,64 @@ module Kula
           return date.in_time_zone(zone).to_i if date.respond_to?(:in_time_zone)
 
           ::Time.utc(date.year, date.month, date.day).to_i
+        end
+
+        def build_date(year, month, day)
+          return nil if year.nil? || month.nil? || day.nil?
+
+          parts = [as_number(year), as_number(month), as_number(day)]
+          return nil if parts.any?(&:nil?)
+
+          begin
+            ::Date.new(*parts.map(&:to_i))
+          rescue ::Date::Error
+            # A day that does not exist — 31 February — is not computable rather
+            # than an authoring error: the parts can be fields.
+            nil
+          end
+        end
+
+        # Day-first and month-first cannot both be right, and 01/04/2026 is 1
+        # April to most of the world and 4 January to the United States. Guessing
+        # writes a plausible wrong date into a document nobody re-reads, so the
+        # one genuinely ambiguous shape is refused and everything decidable is
+        # accepted.
+        AMBIGUOUS_NUMERIC = %r{\A(\d{1,2})[/-](\d{1,2})[/-](\d{4})\z}
+        ISO = /\A\d{4}-\d{1,2}-\d{1,2}\z/
+
+        def parse_date(text)
+          return nil if text.nil?
+
+          value = text.to_s.strip
+          return nil if value.empty?
+          # Both parts could be a month, so there is no reading to prefer.
+          # parsedate(text, format) is how an author says which they meant.
+          if (parts = AMBIGUOUS_NUMERIC.match(value)) && parts[1].to_i <= 12 && parts[2].to_i <= 12
+            return nil
+          end
+
+          begin
+            # ISO first and explicitly: Date.parse reads 2026-04-01 correctly, but
+            # stating it keeps the one format every system agrees on independent
+            # of what Date.parse decides for the rest.
+            ISO.match?(value) ? ::Date.iso8601(value) : ::Date.parse(value)
+          rescue ::Date::Error, ::ArgumentError
+            nil
+          end
+        end
+
+        # The tokens an author writes, mapped onto strptime's. No width variants:
+        # strptime's %d and %m already read both "1" and "01", and the %-d form
+        # is a strftime flag that strptime does not accept at all — so dd and d
+        # are the same instruction to the parser, and differ only to the author.
+        STRPTIME_TOKENS = {
+          "yyyy" => "%Y", "yy" => "%y",
+          "MMMM" => "%B", "MMM" => "%b", "MM" => "%m", "M" => "%m",
+          "dd" => "%d", "d" => "%d"
+        }.freeze
+
+        def to_strptime(format)
+          format.gsub(/yyyy|yy|MMMM|MMM|MM|M|dd|d/) { |token| STRPTIME_TOKENS.fetch(token) }
         end
 
         # An unrecognised unit yields nil rather than quietly meaning days: the

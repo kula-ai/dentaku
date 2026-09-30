@@ -134,6 +134,63 @@ RSpec.describe Kula::Formula::Catalog do
       it "is not computable for a day that does not exist" do
         expect(calculator.evaluate!("date(2027, 2, 31)")).to be_nil
       end
+
+      # An author types a date the way they read one. Every shape below has a
+      # single reading, so accepting them costs nothing and refusing them would
+      # only teach the author our preferences.
+      describe "from text" do
+        it "reads every unambiguous shape as the same day" do
+          expected = calculator.evaluate!("date(2026, 4, 25)")
+
+          [
+            "2026-04-25",
+            "25/04/2026",
+            "25-04-2026",
+            "25 Apr 2026",
+            "Apr 25, 2026",
+            "25 April 2026"
+          ].each do |written|
+            expect(calculator.evaluate!(%{date("#{written}")})).to eq(expected), written
+          end
+        end
+
+        # The one shape with two readings: 01/04/2026 is 1 April to most of the
+        # world and 4 January to the United States. Guessing puts a plausible
+        # wrong date into a document nobody re-reads.
+        it "refuses a numeric date that could be read either way" do
+          expect(calculator.evaluate!(%{date("01/04/2026")})).to be_nil
+          expect(calculator.evaluate!(%{date("04-01-2026")})).to be_nil
+        end
+
+        # Same separators, but 25 cannot be a month, so there is nothing to guess.
+        it "accepts the same shape once one number can only be a day" do
+          expect(calculator.evaluate!(%{date("25/04/2026")})).to eq(calculator.evaluate!("date(2026, 4, 25)"))
+        end
+
+        it "is not computable for text that is not a date" do
+          expect(calculator.evaluate!(%{date("not a date")})).to be_nil
+          expect(calculator.evaluate!(%{date("")})).to be_nil
+        end
+      end
+
+      # How an author answers the question date() refuses to guess.
+      describe "parsedate()" do
+        it "reads a date in the format the author states" do
+          expect(calculator.evaluate!(%{parsedate("01/04/2026", "dd/MM/yyyy")}))
+            .to eq(calculator.evaluate!("date(2026, 4, 1)"))
+          expect(calculator.evaluate!(%{parsedate("01/04/2026", "MM/dd/yyyy")}))
+            .to eq(calculator.evaluate!("date(2026, 1, 4)"))
+        end
+
+        it "reads the month by name" do
+          expect(calculator.evaluate!(%{parsedate("April 1 2026", "MMMM d yyyy")}))
+            .to eq(calculator.evaluate!("date(2026, 4, 1)"))
+        end
+
+        it "is not computable when the text does not match the format" do
+          expect(calculator.evaluate!(%{parsedate("2026-04-01", "dd/MM/yyyy")})).to be_nil
+        end
+      end
     end
   end
 
