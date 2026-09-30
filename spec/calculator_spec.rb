@@ -496,6 +496,18 @@ describe Dentaku::Calculator do
     expect(calculator.evaluate('t1 > 2017-01-02', t1: Time.local(2017, 1, 3).to_datetime)).to be_truthy
   end
 
+  describe 'logical precedence' do
+    it 'binds and tighter than or' do
+      expect(calculator.evaluate!('true or false and false')).to eq(true)
+      expect(calculator.evaluate!('true and false or false')).to eq(false)
+      expect(calculator.evaluate!('1 = 1 or 1 = 2 and 1 = 2')).to eq(true)
+    end
+
+    it 'folds comparisons before either combinator' do
+      expect(calculator.evaluate!('1 + 1 = 2 and 2 > 1')).to eq(true)
+    end
+  end
+
   describe 'disabling date literals' do
     it 'does not parse formulas with minus signs as dates' do
       calculator = described_class.new(raw_date_literals: false)

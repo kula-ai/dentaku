@@ -28,6 +28,14 @@ module Dentaku
     end
 
     class And < Combinator
+      # Both combinators sit below Comparator (5), so a comparison is folded
+      # before either binds; `and` above `or` is what every language, spreadsheet
+      # and SQL dialect reads, and without an override both inherited Node's 0
+      # and folded left to right.
+      def self.precedence
+        2
+      end
+
       def operator
         :and
       end
@@ -38,6 +46,10 @@ module Dentaku
     end
 
     class Or < Combinator
+      def self.precedence
+        1
+      end
+
       def operator
         :or
       end
