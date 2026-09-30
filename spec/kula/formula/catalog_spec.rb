@@ -212,5 +212,19 @@ RSpec.describe Kula::Formula::Catalog do
     it "is exactly the built-ins plus what we register" do
       expect(described_class::ALL).to match_array(described_class::BUILT_IN + described_class::ADDED)
     end
+
+    # A function reaches an author only if it is in ALL: the host rejects
+    # anything outside it as err_formula_unknown_function before evaluating. So
+    # registering one and forgetting to list it ships it unreachable, which is
+    # what happened to `date` — registered, typed, and refused for every author
+    # who typed it.
+    it "publishes every function install registers" do
+      calculator = described_class.install(Dentaku::Calculator.new)
+      # No public reader for it, and the point of this spec is to read exactly
+      # what install() put there rather than a list that can drift from it.
+      registered = calculator.instance_variable_get(:@function_registry).keys.map(&:to_s)
+
+      expect(registered - described_class::ALL).to be_empty
+    end
   end
 end

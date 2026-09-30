@@ -24,7 +24,7 @@ module Kula
 
       # Registered on top of dentaku's built-ins.
       ADDED = %w[
-        ceiling floor dateadd datediff year month day today
+        ceiling floor date dateadd datediff year month day today
         equaltext upper lower trim contains coalesce ifnull isnull
       ].freeze
 
