@@ -194,6 +194,99 @@ RSpec.describe Kula::Formula::Catalog do
     end
   end
 
+  # The functions a compensation formula actually reaches for. Zoho Analytics,
+  # which product reads these against, ships about eighty; these are the ones an
+  # offer is written with.
+  describe "the rest of the date surface" do
+    let(:mid_march) { Time.utc(2026, 3, 18).to_i }   # a Wednesday
+
+    it "reads the quarter, the weekday and the day's name" do
+      expect(calculator.evaluate!("quarter(#{mid_march})")).to eq(1)
+      expect(calculator.evaluate!("weekday(#{mid_march})")).to eq(3)
+      expect(calculator.evaluate!("dayname(#{mid_march})")).to eq("Wednesday")
+    end
+
+    # 1 is Monday, so "not a weekend" is weekday(d) < 6 everywhere.
+    it "numbers the weekend last" do
+      saturday = Time.utc(2026, 3, 21).to_i
+
+      expect(calculator.evaluate!("weekday(#{saturday})")).to eq(6)
+    end
+
+    describe "boundaries" do
+      it "finds the start and end of a month, quarter and year" do
+        expect(calculator.evaluate!(%{day(start_day("month", #{mid_march}))})).to eq(1)
+        expect(calculator.evaluate!(%{day(end_day("month", #{mid_march}))})).to eq(31)
+        expect(calculator.evaluate!(%{month(start_day("quarter", #{mid_march}))})).to eq(1)
+        expect(calculator.evaluate!(%{month(end_day("quarter", #{mid_march}))})).to eq(3)
+        expect(calculator.evaluate!(%{month(start_day("year", #{mid_march}))})).to eq(1)
+        expect(calculator.evaluate!(%{day(end_day("year", #{mid_march}))})).to eq(31)
+      end
+
+      it "finds the Monday and Sunday of a week" do
+        expect(calculator.evaluate!(%{dayname(start_day("week", #{mid_march}))})).to eq("Monday")
+        expect(calculator.evaluate!(%{dayname(end_day("week", #{mid_march}))})).to eq("Sunday")
+      end
+
+      it "reads February in a leap year" do
+        feb = Time.utc(2028, 2, 10).to_i
+
+        expect(calculator.evaluate!("day(lastday(#{feb}))")).to eq(29)
+      end
+
+      # Same reasoning as dateadd: a typo'd unit must surface rather than mean
+      # something plausible.
+      it "yields nil for a unit it does not recognise" do
+        expect(calculator.evaluate!(%{start_day("fortnight", #{mid_march})})).to be_nil
+      end
+    end
+
+    describe "spans" do
+      let(:from) { Time.utc(2026, 1, 10).to_i }
+      let(:to) { Time.utc(2026, 3, 15).to_i }
+
+      # from, to — the order the question is asked in, and the reverse of
+      # datediff's later/earlier.
+      it "counts days, months and years from one date to another" do
+        expect(calculator.evaluate!("days_between(#{from}, #{to})")).to eq(64)
+        expect(calculator.evaluate!("months_between(#{from}, #{to})")).to eq(2)
+        expect(calculator.evaluate!("age_years(#{Time.utc(2000, 1, 10).to_i}, #{to})")).to eq(26)
+      end
+
+      # Which is what a tenure or a notice period is measured against.
+      it "measures to today when the far end is left out" do
+        expect(calculator.evaluate!("days_between(today())")).to eq(0)
+      end
+
+      # A notice period is counted in working days far more often than calendar
+      # ones. Mon 16th to Mon 23rd is five.
+      it "counts business days, excluding weekends" do
+        monday = Time.utc(2026, 3, 16).to_i
+        next_monday = Time.utc(2026, 3, 23).to_i
+
+        expect(calculator.evaluate!("business_days(#{monday}, #{next_monday})")).to eq(5)
+      end
+
+      it "counts business days backwards as a negative" do
+        monday = Time.utc(2026, 3, 16).to_i
+        next_monday = Time.utc(2026, 3, 23).to_i
+
+        expect(calculator.evaluate!("business_days(#{next_monday}, #{monday})")).to eq(-5)
+      end
+    end
+
+    # A date inside a text field or an offer letter, in the same tokens parsedate
+    # reads.
+    it "formats a date as text" do
+      expect(calculator.evaluate!(%{format_date(#{mid_march}, "dd/MM/yyyy")})).to eq("18/03/2026")
+      expect(calculator.evaluate!(%{format_date(#{mid_march}, "d MMM yyyy")})).to eq("18 Mar 2026")
+    end
+
+    it "keeps the time of day, which every other date function drops" do
+      expect(calculator.evaluate!("now()")).to be_within(5).of(Time.now.to_i)
+    end
+  end
+
   describe "text" do
     it "adds case functions and trim" do
       expect(calculator.evaluate!(%{upper("ab")})).to eq("AB")

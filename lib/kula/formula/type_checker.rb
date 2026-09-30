@@ -27,7 +27,7 @@ module Kula
       # Registered :numeric because dentaku's registry wants a type it knows, so
       # the date-ness is restored here — the alternative is teaching the registry
       # a type the gem ships no operators for.
-      DATE_RESULT_FUNCTIONS = %w[today dateadd date parsedate].freeze
+      DATE_RESULT_FUNCTIONS = %w[today dateadd date parsedate now start_day end_day lastday].freeze
 
       # Registered with a fixed :numeric return type because dentaku's registry
       # wants one, but they actually pass their operands through. Taking that

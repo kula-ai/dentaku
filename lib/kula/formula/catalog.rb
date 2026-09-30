@@ -25,6 +25,8 @@ module Kula
       # Registered on top of dentaku's built-ins.
       ADDED = %w[
         ceiling floor date parsedate dateadd datediff year month day today
+        now days_between months_between age_years business_days
+        start_day end_day lastday quarter weekday dayname format_date
         equaltext upper lower trim contains coalesce ifnull isnull
       ].freeze
 
@@ -147,6 +149,59 @@ module Kula
             parsed && from_date(parsed, zone)
           })
 
+          # today() with the time of day kept, for a timestamp field. Every other
+          # date function here is date-granular, so this is the one way to get one.
+          calculator.add_function(:now, :numeric, -> { now(zone).to_i })
+
+          # datediff in the order the question is usually asked — "from this, to
+          # that" — and defaulting the far end to today, which is what a notice
+          # period or a tenure is measured against.
+          calculator.add_function(:days_between, :numeric, ->(*args) { between(args, "days", zone) })
+          calculator.add_function(:months_between, :numeric, ->(*args) { between(args, "months", zone) })
+          calculator.add_function(:age_years, :numeric, ->(*args) { between(args, "years", zone) })
+
+          # Working days, weekends excluded. A notice period is counted this way
+          # far more often than in calendar days.
+          calculator.add_function(:business_days, :numeric, ->(from, to) {
+            start_at = to_date(from, zone)
+            end_at = to_date(to, zone)
+            next nil if start_at.nil? || end_at.nil?
+
+            step = (start_at <= end_at) ? 1 : -1
+            count = 0
+            cursor = start_at
+            while cursor != end_at
+              cursor += step
+              count += step unless (6..7).cover?(cursor.cwday)
+            end
+            count
+          })
+
+          # The boundaries a comp cycle is written against. Unit first, matching
+          # dateadd's "amount then unit" reading rather than reversing it.
+          calculator.add_function(:start_day, :numeric, ->(unit, ts) { boundary(unit, ts, :start, zone) })
+          calculator.add_function(:end_day, :numeric, ->(unit, ts) { boundary(unit, ts, :end, zone) })
+          calculator.add_function(:lastday, :numeric, ->(ts) { boundary("month", ts, :end, zone) })
+
+          calculator.add_function(:quarter, :numeric, ->(ts) {
+            date = to_date(ts, zone)
+            date && (((date.month - 1) / 3) + 1)
+          })
+
+          # 1 is Monday, as cwday reads it: a rule for "not a weekend" is then
+          # weekday(d) < 6, which is the same everywhere.
+          calculator.add_function(:weekday, :numeric, ->(ts) { to_date(ts, zone)&.cwday })
+          calculator.add_function(:dayname, :string, ->(ts) { to_date(ts, zone)&.strftime("%A") })
+
+          # A date inside a text field or an offer letter. The author states the
+          # shape in the same tokens parsedate reads.
+          calculator.add_function(:format_date, :string, ->(ts, format) {
+            next nil if format.nil?
+
+            date = to_date(ts, zone)
+            date&.strftime(to_strptime(format.to_s))
+          })
+
           calculator.add_function(:year, :numeric, ->(ts) { to_date(ts, zone)&.year })
           calculator.add_function(:month, :numeric, ->(ts) { to_date(ts, zone)&.month })
           calculator.add_function(:day, :numeric, ->(ts) { to_date(ts, zone)&.day })
@@ -242,6 +297,38 @@ module Kula
 
         def to_strptime(format)
           format.gsub(/yyyy|yy|MMMM|MMM|MM|M|dd|d/) { |token| STRPTIME_TOKENS.fetch(token) }
+        end
+
+        # from, to — and "to" defaults to today, which is what a tenure or a
+        # notice period is measured against. Reversed from datediff's later/earlier
+        # because this is the order the question is asked in.
+        def between(args, unit, zone)
+          from, to = args
+          return nil if from.nil?
+
+          difference(to.nil? ? from_date(now(zone).to_date, zone) : to, from, unit, zone)
+        end
+
+        # The first or last day of the period a date falls in.
+        def boundary(unit, timestamp, edge, zone)
+          date = to_date(timestamp, zone)
+          return nil if date.nil?
+
+          moved =
+            case unit.to_s.downcase
+            when "week", "weeks" then (edge == :start) ? date - (date.cwday - 1) : date + (7 - date.cwday)
+            when "month", "months" then (edge == :start) ? ::Date.new(date.year, date.month, 1) : ::Date.new(date.year, date.month, -1)
+            when "quarter", "quarters" then quarter_edge(date, edge)
+            when "year", "years" then (edge == :start) ? ::Date.new(date.year, 1, 1) : ::Date.new(date.year, 12, 31)
+            end
+          moved && from_date(moved, zone)
+        end
+
+        def quarter_edge(date, edge)
+          first_month = (((date.month - 1) / 3) * 3) + 1
+          return ::Date.new(date.year, first_month, 1) if edge == :start
+
+          ::Date.new(date.year, first_month + 2, -1)
         end
 
         # An unrecognised unit yields nil rather than quietly meaning days: the
