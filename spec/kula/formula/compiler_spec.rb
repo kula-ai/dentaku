@@ -46,8 +46,10 @@ RSpec.describe Kula::Formula::Compiler do
       expect(result.diagnostics.map(&:position)).to eq([2, 6])
     end
 
+    # A single long literal rather than a chain: a chain that long is over the
+    # operation cap too, and this example is about the length one.
     it "rejects an over-long formula before parsing it" do
-      result = described_class.new.compile("1 + " * Kula::Formula::Limits::MAX_LENGTH + "1")
+      result = described_class.new.compile("1" * (Kula::Formula::Limits::MAX_LENGTH + 1))
 
       expect(result.codes).to eq([Kula::Formula::Errors::TOO_LONG])
     end

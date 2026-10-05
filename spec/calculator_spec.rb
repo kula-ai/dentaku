@@ -53,6 +53,18 @@ describe Dentaku::Calculator do
     expect(calculator.evaluate("50% + 50%")).to eq (1.0)
   end
 
+  # A negate begins an operand where every other operator continues the
+  # expression, so `%` followed by one is modulo and not a postfix percentage.
+  # Read as a percentage it took two operands and raised, while `10 / -3` and
+  # `10 % (-3)` both parsed -- so the refusal looked like a mistake in the
+  # author's formula.
+  it "reads a bare negative after a modulo as an operand" do
+    expect(calculator.evaluate!('10 % -3')).to eq(-2)
+    expect(calculator.evaluate!('10 % (-3)')).to eq(-2)
+    expect(calculator.evaluate!('-10 % 3')).to eq(2)
+    expect(calculator.evaluate!('10 / -3').round(4)).to eq(-3.3333)
+  end
+
   describe 'evaluate' do
     it 'returns nil when formula has error' do
       expect(calculator.evaluate('1 + + 1')).to be_nil

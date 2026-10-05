@@ -11,6 +11,32 @@ module Kula
       MAX_LENGTH = 4_000
       MAX_REFERENCES = 50
       MAX_NESTING = 32
+      # Binary operations in one formula. A chain of them is flat -- no
+      # parentheses -- so MAX_NESTING measures zero for it, and it carries no
+      # references so MAX_REFERENCES does not see it either. Only MAX_LENGTH
+      # applied, and the operator-precedence parser recurses once per operator:
+      # past some depth it exhausts the stack and the request answers 500 rather
+      # than a diagnostic. Where that depth falls varies with how much stack is
+      # left beneath the parse -- a Puma worker thread has far less than a console
+      # -- which is the reason to cap the SOURCE rather than trust the stack.
+      #
+      # 200 against MAX_REFERENCES of 50: a formula naming the most fields it may
+      # needs about 49 operators, so this is four times the reachable maximum and
+      # well under any depth observed to crash.
+      #
+      # Argument lists are not counted. They parse iteratively, so max(0, 0, ...)
+      # with a thousand arguments is safe where the same count of binary operators
+      # is not.
+      MAX_OPERATIONS = 200
+
+      # The binary operators the language offers. Counted on the source with string
+      # literals already masked out, so an operator an author typed inside quoted
+      # text is data rather than an operation.
+      #
+      # A minus is counted whatever it means: telling subtraction from negation
+      # needs the tokenizer, and both recurse in the parser, so for a cap the
+      # difference does not matter.
+      OPERATION_PATTERN = %r{[+\-*/%^]|<<|>>|&|\|}
 
       module_function
 
@@ -30,6 +56,9 @@ module Kula
         references = countable.scan(Resolver::TOKEN_PATTERN).size +
           countable.gsub(Resolver::TOKEN_PATTERN, " ").scan(Resolver::HANDLE_PATTERN).size
         found << over(Errors::TOO_MANY_REFERENCES, references, MAX_REFERENCES) if references > MAX_REFERENCES
+
+        operations = countable.scan(OPERATION_PATTERN).size
+        found << over(Errors::TOO_DEEPLY_NESTED, operations, MAX_OPERATIONS) if operations > MAX_OPERATIONS
 
         depth = max_depth(countable)
         found << over(Errors::TOO_DEEPLY_NESTED, depth, MAX_NESTING) if depth > MAX_NESTING

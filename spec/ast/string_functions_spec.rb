@@ -198,6 +198,26 @@ describe Dentaku::AST::StringFunctions::Concat do
     expect(subject.value).to eq ''
   end
 
+  # to_s is wrong for both numeric types a formula carries: a Float writes 234 as
+  # "234.0" and a BigDecimal as "0.234e3". Neither belongs in an offer letter.
+  it 'writes a whole number without a decimal tail, whatever its type' do
+    [234, 234.0, BigDecimal('234')].each do |number|
+      subject = described_class.new(literal(number), literal('x'))
+      expect(subject.value).to eq('234x'), number.class.to_s
+    end
+  end
+
+  it 'writes a fraction in full rather than in scientific notation' do
+    expect(described_class.new(literal(BigDecimal('1.5'))).value).to eq('1.5')
+    expect(described_class.new(literal(1.5)).value).to eq('1.5')
+    expect(described_class.new(literal(BigDecimal('0.1'))).value).to eq('0.1')
+  end
+
+  # BigDecimal#to_s("F") leaves the zeros behind.
+  it 'drops the trailing zeros of a fraction' do
+    expect(described_class.new(literal(BigDecimal('1.50'))).value).to eq('1.5')
+  end
+
   it 'has the proper type' do
     expect(subject.type).to eq(:string)
   end

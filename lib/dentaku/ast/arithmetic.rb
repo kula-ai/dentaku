@@ -189,6 +189,12 @@ module Dentaku
       end
 
       def self.resolve_class(next_token)
+        # A negate begins an OPERAND, where every other operator continues the
+        # expression -- so `10 % -3` resolved to Percentage, which takes one
+        # operand, and was handed two. `10 / -3` and `10 % (-3)` both parse, which
+        # made the refusal read as a syntax error in the author's formula.
+        return self if next_token&.value == :negate
+
         next_token.nil? || next_token.operator? || next_token.close? ? Percentage : self
       end
 

@@ -8,6 +8,14 @@ RSpec.describe Kula::Formula::Limits do
 
   def max_nest = Kula::Formula::Limits::MAX_NESTING
 
+  def max_ops = Kula::Formula::Limits::MAX_OPERATIONS
+
+  # A flat chain of n binary operations: no parentheses, no references, so only
+  # the operation cap can see it.
+  def chain(count)
+    "1" + ("+0" * count)
+  end
+
   def codes(source)
     described_class.check(source).map(&:code)
   end
@@ -23,6 +31,43 @@ RSpec.describe Kula::Formula::Limits do
 
   it "passes a formula within budget" do
     expect(codes("{a} + {b}")).to be_empty
+  end
+
+  # A chain like this is flat, so the nesting cap measures zero for it, and it
+  # names no fields, so the reference cap does not see it either. Only the length
+  # cap applied, and the parser recurses once per operator -- past some depth it
+  # exhausts the stack and the caller gets a 500 instead of a diagnostic.
+  describe "operations" do
+    it "rejects a chain over the cap" do
+      expect(codes(chain(max_ops + 1))).to eq([Kula::Formula::Errors::TOO_DEEPLY_NESTED])
+    end
+
+    it "allows one exactly at the cap" do
+      expect(codes(chain(max_ops))).to be_empty
+    end
+
+    it "reports the limit and the actual count" do
+      detail = described_class.check(chain(max_ops + 1)).first.detail
+
+      expect(detail).to eq({limit: max_ops, actual: max_ops + 1})
+    end
+
+    # The chain from the report that prompted this cap.
+    it "rejects the chain that reached the parser" do
+      expect(codes(chain(1300))).to include(Kula::Formula::Errors::TOO_DEEPLY_NESTED)
+    end
+
+    # Argument lists parse iteratively, so a call with far more arguments than
+    # this cap is safe where the same count of binary operators is not. Capping
+    # them would refuse a formula that never had a problem.
+    it "does not count a function's arguments" do
+      expect(codes("max(" + (["0"] * (max_ops * 2)).join(",") + ")")).to be_empty
+    end
+
+    # An operator inside quoted text is data, as it is for the reference cap.
+    it "does not count operators inside a string literal" do
+      expect(codes(%{concat("#{"+" * (max_ops + 1)}", "a")})).to be_empty
+    end
   end
 
   describe "length" do

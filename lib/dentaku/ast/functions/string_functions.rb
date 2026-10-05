@@ -3,6 +3,23 @@ require_relative '../function'
 module Dentaku
   module AST
     module StringFunctions
+      # A number as a person would write it, for any function that turns one into
+      # text. `to_s` is wrong for both numeric types a formula carries: a Float
+      # renders 234 as "234.0", and a BigDecimal -- which is what a cast number
+      # field produces -- renders it as "0.234e3". Neither belongs in an offer
+      # letter.
+      #
+      # An integral value loses the decimal tail; a fractional one is written in
+      # full rather than in scientific notation, and without the trailing zeros
+      # BigDecimal#to_s("F") leaves behind.
+      def self.humanize(value)
+        return value.to_s unless value.is_a?(::Numeric)
+        return value.to_i.to_s if value.respond_to?(:to_i) && value == value.to_i
+
+        decimal = value.is_a?(::BigDecimal) ? value.to_s("F") : value.to_s
+        decimal.include?(".") ? decimal.sub(%r{0+\z}, "").sub(%r{\.\z}, "") : decimal
+      end
+
       class Base < Function
         def type
           :string
@@ -172,7 +189,7 @@ module Dentaku
         end
 
         def value(context = {})
-          @args.map { |arg| arg.value(context).to_s }.join
+          @args.map { |arg| Dentaku::AST::StringFunctions.humanize(arg.value(context)) }.join
         end
       end
 
