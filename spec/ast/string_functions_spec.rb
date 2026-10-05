@@ -218,6 +218,22 @@ describe Dentaku::AST::StringFunctions::Concat do
     expect(described_class.new(literal(BigDecimal('1.50'))).value).to eq('1.5')
   end
 
+  # A Float small enough to render in exponent notation reached the trailing-zero
+  # strip as text, so "1.5e-10" came out as "1.5e-1" -- nine orders of magnitude
+  # out, with nothing raised. Routed through BigDecimal, which has a plain form.
+  it 'writes a Float exponent in full rather than truncating it' do
+    expect(described_class.new(literal(1.5e-10)).value).to eq('0.00000000015')
+    expect(described_class.new(literal(1.5e-5)).value).to eq('0.000015')
+  end
+
+  # to_i raises FloatDomainError on these, and that is not a Dentaku::Error -- so
+  # it would leave evaluate! as a 500 rather than a diagnostic.
+  it 'writes a non-finite number rather than raising' do
+    expect(described_class.new(literal(Float::INFINITY)).value).to eq('Infinity')
+    expect(described_class.new(literal(Float::NAN)).value).to eq('NaN')
+    expect(described_class.new(literal(BigDecimal('Infinity'))).value).to eq('Infinity')
+  end
+
   it 'has the proper type' do
     expect(subject.type).to eq(:string)
   end

@@ -189,12 +189,14 @@ module Dentaku
       end
 
       def self.resolve_class(next_token)
-        # A negate begins an OPERAND, where every other operator continues the
-        # expression -- so `10 % -3` resolved to Percentage, which takes one
-        # operand, and was handed two. `10 / -3` and `10 % (-3)` both parse, which
-        # made the refusal read as a syntax error in the author's formula.
-        return self if next_token&.value == :negate
-
+        # A following negate is left as Percentage deliberately. `10 % -3` (modulo
+        # by a negative) and `50% - 3` (a percentage, then a subtraction) produce
+        # the SAME token stream -- the tokenizer reads any `-` after an operator as
+        # negate -- so nothing here can tell them apart. Resolving to modulo made
+        # `100000 * 10% - 500` evaluate to 0.0 and `50% - 3` to -1, silently,
+        # where both had been refused. A wrong number in an offer letter is worse
+        # than a refusal, and both unambiguous forms already parse: `10 % (-3)`
+        # for modulo, `(50%) - 3` for the percentage.
         next_token.nil? || next_token.operator? || next_token.close? ? Percentage : self
       end
 

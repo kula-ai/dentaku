@@ -53,14 +53,22 @@ describe Dentaku::Calculator do
     expect(calculator.evaluate("50% + 50%")).to eq (1.0)
   end
 
-  # A negate begins an operand where every other operator continues the
-  # expression, so `%` followed by one is modulo and not a postfix percentage.
-  # Read as a percentage it took two operands and raised, while `10 / -3` and
-  # `10 % (-3)` both parsed -- so the refusal looked like a mistake in the
-  # author's formula.
-  it "reads a bare negative after a modulo as an operand" do
-    expect(calculator.evaluate!('10 % -3')).to eq(-2)
+  # `%` followed by a bare negative is ambiguous and is refused rather than
+  # resolved. The tokenizer reads any `-` after an operator as negate, so
+  # `10 % -3` (modulo by a negative) and `50% - 3` (a percentage, then a
+  # subtraction) are the SAME token stream. Resolving it to modulo made
+  # `100000 * 10% - 500` evaluate to 0.0 silently, where it had been refused --
+  # and a wrong number in an offer letter is worse than a refusal.
+  it "refuses a bare negative after a modulo rather than guessing" do
+    expect { calculator.evaluate!('10 % -3') }.to raise_error(Dentaku::ParseError)
+    expect { calculator.evaluate!('50% - 3') }.to raise_error(Dentaku::ParseError)
+    expect { calculator.evaluate!('100000 * 10% - 500') }.to raise_error(Dentaku::ParseError)
+  end
+
+  # Both readings have an unambiguous form, which is what the author is pointed at.
+  it "parses either meaning when the author parenthesises it" do
     expect(calculator.evaluate!('10 % (-3)')).to eq(-2)
+    expect(calculator.evaluate!('(50%) - 3')).to eq(-2.5)
     expect(calculator.evaluate!('-10 % 3')).to eq(2)
     expect(calculator.evaluate!('10 / -3').round(4)).to eq(-3.3333)
   end

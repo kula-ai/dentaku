@@ -68,6 +68,34 @@ RSpec.describe Kula::Formula::Limits do
     it "does not count operators inside a string literal" do
       expect(codes(%{concat("#{"+" * (max_ops + 1)}", "a")})).to be_empty
     end
+
+    # The parser recurses once per binary node whatever the operator, so counting
+    # arithmetic alone left comparison and logical chains to reach it uncounted --
+    # under the length cap and naming no fields, exactly like the arithmetic chain
+    # this cap was written for.
+    {
+      "comparison" => "1" + ("<1" * 201),
+      "two-character comparison" => "1" + ("<=1" * 201),
+      "equality" => "1" + ("=1" * 201),
+      "logical or" => "a" + (" or a" * 201),
+      "logical and" => "a" + (" and a" * 201)
+    }.each do |label, source|
+      it "rejects a #{label} chain over the cap" do
+        expect(codes(source)).to include(Kula::Formula::Errors::TOO_DEEPLY_NESTED)
+      end
+    end
+
+    # The word operators are bounded, so a field whose name contains one is not
+    # counted as an operation -- otherwise the cap would mean something different
+    # depending on what the account's fields are called.
+    it "does not count a word operator inside a field name" do
+      expect(codes("{born_or_raised} + {command_line} + {taxonomy}")).to be_empty
+    end
+
+    # Longest first: a two-character operator is one operation, not two.
+    it "counts a two-character operator once" do
+      expect(described_class.check("1" + ("<=1" * max_ops)).map(&:code)).to be_empty
+    end
   end
 
   describe "length" do

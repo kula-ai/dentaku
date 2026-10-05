@@ -29,14 +29,23 @@ module Kula
       # is not.
       MAX_OPERATIONS = 200
 
-      # The binary operators the language offers. Counted on the source with string
-      # literals already masked out, so an operator an author typed inside quoted
-      # text is data rather than an operation.
+      # The binary operators the language offers -- arithmetic, bitwise, COMPARISON
+      # and LOGICAL. Counted on the source with string literals already masked out,
+      # so an operator an author typed inside quoted text is data rather than an
+      # operation.
+      #
+      # Arithmetic and bitwise alone left the hole this cap exists to close: the
+      # parser recurses once per binary node whatever the operator, so `1<1<1<1...`
+      # and `a or a or a...` reached it uncounted, under MAX_LENGTH and naming no
+      # fields.
       #
       # A minus is counted whatever it means: telling subtraction from negation
       # needs the tokenizer, and both recurse in the parser, so for a cap the
       # difference does not matter.
-      OPERATION_PATTERN = %r{[+\-*/%^]|<<|>>|&|\|}
+      #
+      # Longest first, so `<=` is one operation rather than `<` and `=`. The word
+      # operators are bounded, so a field token like {born_or_raised} is not three.
+      OPERATION_PATTERN = %r{<=|>=|<>|!=|<<|>>|[+\-*/%^<>=&|]|\b(?:and|or|xor)\b}i
 
       module_function
 

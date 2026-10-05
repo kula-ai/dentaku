@@ -14,8 +14,18 @@ module Dentaku
       # BigDecimal#to_s("F") leaves behind.
       def self.humanize(value)
         return value.to_s unless value.is_a?(::Numeric)
+        # Infinity and NaN have no decimal form: to_i raises FloatDomainError on
+        # them, which is not a Dentaku::Error and so would leave evaluate! as a
+        # 500 rather than a diagnostic. to_s is the honest answer.
+        return value.to_s if value.respond_to?(:finite?) && !value.finite?
         return value.to_i.to_s if value.respond_to?(:to_i) && value == value.to_i
 
+        # Through BigDecimal, which has a plain-decimal form. A Float small or
+        # large enough to render in exponent notation reached the trailing-zero
+        # strip as text, and "1.5e-10" came out as "1.5e-1" -- nine orders of
+        # magnitude out, silently. No formula path produces a Float today; this
+        # is so the next caller that does is not the one who finds out.
+        value = ::Kernel::BigDecimal(value.to_s) if value.is_a?(::Float)
         decimal = value.is_a?(::BigDecimal) ? value.to_s("F") : value.to_s
         decimal.include?(".") ? decimal.sub(%r{0+\z}, "").sub(%r{\.\z}, "") : decimal
       end
