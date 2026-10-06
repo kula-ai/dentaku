@@ -14,6 +14,11 @@ module Kula
       TOO_LONG = "err_formula_too_long"
       TOO_MANY_REFERENCES = "err_formula_too_many_references"
       TOO_DEEPLY_NESTED = "err_formula_too_deeply_nested"
+      # Its own code rather than TOO_DEEPLY_NESTED, which it used to share. A
+      # chain of operations is FLAT -- it nests nothing -- so a host rendering one
+      # message per code told the admin to remove nesting that is not there, and a
+      # host branching on detail[:limit] instead would be matching the literal 200.
+      TOO_MANY_OPERATIONS = "err_formula_too_many_operations"
       UNKNOWN_FUNCTION = "err_formula_unknown_function"
       UNSUPPORTED_CONSTRUCT = "err_formula_unsupported_construct"
       DIVISION_BY_ZERO = "err_formula_division_by_zero"

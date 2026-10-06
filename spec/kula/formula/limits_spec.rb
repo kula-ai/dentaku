@@ -39,22 +39,25 @@ RSpec.describe Kula::Formula::Limits do
   # exhausts the stack and the caller gets a 500 instead of a diagnostic.
   describe "operations" do
     it "rejects a chain over the cap" do
-      expect(codes(chain(max_ops + 1))).to eq([Kula::Formula::Errors::TOO_DEEPLY_NESTED])
+      expect(codes(chain(max_ops + 1))).to eq([Kula::Formula::Errors::TOO_MANY_OPERATIONS])
     end
 
     it "allows one exactly at the cap" do
       expect(codes(chain(max_ops))).to be_empty
     end
 
-    # The operation cap and the nesting cap share TOO_DEEPLY_NESTED, so a formula
-    # over both answered twice with the same code and conflicting limits -- 200
-    # and 32 -- and the editor renders one message per code.
-    it "answers one diagnostic per code when both caps are exceeded" do
+    # Each cap carries its own code, so a formula over both says both things and
+    # each limit is the one it belongs to. Sharing TOO_DEEPLY_NESTED, the two
+    # answered with conflicting {limit} -- 200 and 32 -- for a code a host renders
+    # one message per.
+    it "answers a diagnostic per cap when both are exceeded" do
       source = "(" * (max_nest + 8) + "1" + ("+1" * (max_ops + 50)) + ")" * (max_nest + 8)
-      found = described_class.check(source)
+      found = described_class.check(source).to_h { |d| [d.code, d.detail] }
 
-      expect(found.map(&:code)).to eq([Kula::Formula::Errors::TOO_DEEPLY_NESTED])
-      expect(found.first.detail).to eq({limit: max_ops, actual: max_ops + 50})
+      expect(found).to eq(
+        Kula::Formula::Errors::TOO_MANY_OPERATIONS => {limit: max_ops, actual: max_ops + 50},
+        Kula::Formula::Errors::TOO_DEEPLY_NESTED => {limit: max_nest, actual: max_nest + 8}
+      )
     end
 
     it "reports the limit and the actual count" do
@@ -65,7 +68,7 @@ RSpec.describe Kula::Formula::Limits do
 
     # The chain from the report that prompted this cap.
     it "rejects the chain that reached the parser" do
-      expect(codes(chain(1300))).to include(Kula::Formula::Errors::TOO_DEEPLY_NESTED)
+      expect(codes(chain(1300))).to include(Kula::Formula::Errors::TOO_MANY_OPERATIONS)
     end
 
     # Argument lists parse iteratively, so a call with far more arguments than
@@ -92,7 +95,7 @@ RSpec.describe Kula::Formula::Limits do
       "logical and" => "a" + (" and a" * 201)
     }.each do |label, source|
       it "rejects a #{label} chain over the cap" do
-        expect(codes(source)).to include(Kula::Formula::Errors::TOO_DEEPLY_NESTED)
+        expect(codes(source)).to include(Kula::Formula::Errors::TOO_MANY_OPERATIONS)
       end
     end
 
@@ -107,6 +110,16 @@ RSpec.describe Kula::Formula::Limits do
       expect(codes("{R&D Bonus} + 1")).to be_empty
       expect(codes("{Base - Variable} + 1")).to be_empty
       expect(codes("{Bonus %} + 1")).to be_empty
+    end
+
+    # The two-character logical forms are one operation, not two. Counted by the
+    # single-character class, `&& ` and `|| ` each cost double and a chain of them
+    # was refused at about half the stated cap.
+    it "counts a two-character logical operator once" do
+      expect(described_class.check("1" + (" && 1" * max_ops)).map(&:code)).to be_empty
+      expect(described_class.check("1" + (" || 1" * max_ops)).map(&:code)).to be_empty
+      expect(codes("1" + (" && 1" * (max_ops + 1))))
+        .to eq([Kula::Formula::Errors::TOO_MANY_OPERATIONS])
     end
 
     # A token's own operators must not eat the budget either: 100 tokens each

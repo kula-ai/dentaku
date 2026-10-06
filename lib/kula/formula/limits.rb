@@ -51,7 +51,7 @@ module Kula
       #
       # Longest first, so `<=` is one operation rather than `<` and `=`. The word
       # operators are bounded, so a field token like {born_or_raised} is not three.
-      OPERATION_PATTERN = %r{<=|>=|<>|!=|<<|>>|[+\-*/%^<>=&|]|\b(?:and|or|xor)\b}i
+      OPERATION_PATTERN = %r{<=|>=|<>|!=|<<|>>|&&|\|\||[+\-*/%^<>=&|]|\b(?:and|or|xor)\b}i
 
       module_function
 
@@ -63,11 +63,6 @@ module Kula
         found << over(Errors::TOO_LONG, text.length, MAX_LENGTH) if text.length > MAX_LENGTH
 
         countable = Resolver.outside_literals(text)
-        # Both notations count: an author types {Token}, an API client may submit
-        # the handle form it was given, and the cap has to mean the same for each.
-        # Handles counted only where a token did not already claim the text, or a
-        # field literally named f_412 would count twice and the cap would mean
-        # something different depending on what fields are called.
         # A token is an arbitrary field LABEL, so anything inside one is a name
         # rather than syntax: "{Sales and Marketing}" is not an `and`, "{R&D
         # Bonus}" not a `&`, "{Base - Variable}" not a minus. Counted over the
@@ -84,17 +79,12 @@ module Kula
         found << over(Errors::TOO_MANY_REFERENCES, references, MAX_REFERENCES) if references > MAX_REFERENCES
 
         operations = unreferenced.scan(OPERATION_PATTERN).size
-        found << over(Errors::TOO_DEEPLY_NESTED, operations, MAX_OPERATIONS) if operations > MAX_OPERATIONS
+        found << over(Errors::TOO_MANY_OPERATIONS, operations, MAX_OPERATIONS) if operations > MAX_OPERATIONS
 
         depth = max_depth(countable)
         found << over(Errors::TOO_DEEPLY_NESTED, depth, MAX_NESTING) if depth > MAX_NESTING
 
-        # One diagnostic per code. The operation cap and the nesting cap share
-        # TOO_DEEPLY_NESTED, so a formula over both answered twice with the same
-        # code and conflicting {limit} -- 200 and 32 -- and the editor renders one
-        # message per code, so the admin was told whichever limit the client
-        # happened to pick. The first is the one it reports.
-        found.uniq(&:code)
+        found
       end
 
       def over(code, actual, limit)
