@@ -20,9 +20,15 @@ module Kula
       # left beneath the parse -- a Puma worker thread has far less than a console
       # -- which is the reason to cap the SOURCE rather than trust the stack.
       #
-      # 200 against MAX_REFERENCES of 50: a formula naming the most fields it may
-      # needs about 49 operators, so this is four times the reachable maximum and
-      # well under any depth observed to crash.
+      # 200 against MAX_REFERENCES of 50. That is four times over for arithmetic
+      # alone -- a formula naming the most fields it may needs about 49 operators
+      # -- but the margin is smaller than four for a formula mixing kinds, because
+      # comparison and logical operators count too: a tiered commission of ~20
+      # nested ifs, each with a comparison, an `and` and two arithmetic operators,
+      # reaches ~100 on its predicates before its results. Still well under any
+      # depth observed to crash, and a refusal here is a diagnostic rather than a
+      # 500 -- so if a real formula is ever refused, raise this with that formula
+      # as the evidence rather than guessing upward now.
       #
       # Argument lists are not counted. They parse iteratively, so max(0, 0, ...)
       # with a thousand arguments is safe where the same count of binary operators
@@ -62,17 +68,33 @@ module Kula
         # Handles counted only where a token did not already claim the text, or a
         # field literally named f_412 would count twice and the cap would mean
         # something different depending on what fields are called.
+        # A token is an arbitrary field LABEL, so anything inside one is a name
+        # rather than syntax: "{Sales and Marketing}" is not an `and`, "{R&D
+        # Bonus}" not a `&`, "{Base - Variable}" not a minus. Counted over the
+        # masked text, so the cap means the same thing whatever an account calls
+        # its fields.
+        unreferenced = countable.gsub(Resolver::TOKEN_PATTERN, " ")
+        # Both notations count: an author types {Token}, an API client may submit
+        # the handle form it was given, and the cap has to mean the same for each.
+        # Handles counted only where a token did not already claim the text, or a
+        # field literally named f_412 would count twice and the cap would mean
+        # something different depending on what fields are called.
         references = countable.scan(Resolver::TOKEN_PATTERN).size +
-          countable.gsub(Resolver::TOKEN_PATTERN, " ").scan(Resolver::HANDLE_PATTERN).size
+          unreferenced.scan(Resolver::HANDLE_PATTERN).size
         found << over(Errors::TOO_MANY_REFERENCES, references, MAX_REFERENCES) if references > MAX_REFERENCES
 
-        operations = countable.scan(OPERATION_PATTERN).size
+        operations = unreferenced.scan(OPERATION_PATTERN).size
         found << over(Errors::TOO_DEEPLY_NESTED, operations, MAX_OPERATIONS) if operations > MAX_OPERATIONS
 
         depth = max_depth(countable)
         found << over(Errors::TOO_DEEPLY_NESTED, depth, MAX_NESTING) if depth > MAX_NESTING
 
-        found
+        # One diagnostic per code. The operation cap and the nesting cap share
+        # TOO_DEEPLY_NESTED, so a formula over both answered twice with the same
+        # code and conflicting {limit} -- 200 and 32 -- and the editor renders one
+        # message per code, so the admin was told whichever limit the client
+        # happened to pick. The first is the one it reports.
+        found.uniq(&:code)
       end
 
       def over(code, actual, limit)

@@ -46,6 +46,17 @@ RSpec.describe Kula::Formula::Limits do
       expect(codes(chain(max_ops))).to be_empty
     end
 
+    # The operation cap and the nesting cap share TOO_DEEPLY_NESTED, so a formula
+    # over both answered twice with the same code and conflicting limits -- 200
+    # and 32 -- and the editor renders one message per code.
+    it "answers one diagnostic per code when both caps are exceeded" do
+      source = "(" * (max_nest + 8) + "1" + ("+1" * (max_ops + 50)) + ")" * (max_nest + 8)
+      found = described_class.check(source)
+
+      expect(found.map(&:code)).to eq([Kula::Formula::Errors::TOO_DEEPLY_NESTED])
+      expect(found.first.detail).to eq({limit: max_ops, actual: max_ops + 50})
+    end
+
     it "reports the limit and the actual count" do
       detail = described_class.check(chain(max_ops + 1)).first.detail
 
@@ -85,11 +96,25 @@ RSpec.describe Kula::Formula::Limits do
       end
     end
 
-    # The word operators are bounded, so a field whose name contains one is not
-    # counted as an operation -- otherwise the cap would mean something different
-    # depending on what the account's fields are called.
-    it "does not count a word operator inside a field name" do
+    # A token is an arbitrary field LABEL, so an operator inside one is part of a
+    # name. Counted, the cap meant something different depending on what an
+    # account called its fields. The underscore forms below are NOT enough on
+    # their own -- \b does not match inside born_or_raised, so that case passed
+    # while the spaced and symbol ones were miscounted.
+    it "does not count an operator inside a field name" do
       expect(codes("{born_or_raised} + {command_line} + {taxonomy}")).to be_empty
+      expect(codes("{Sales and Marketing Target} + 1")).to be_empty
+      expect(codes("{R&D Bonus} + 1")).to be_empty
+      expect(codes("{Base - Variable} + 1")).to be_empty
+      expect(codes("{Bonus %} + 1")).to be_empty
+    end
+
+    # A token's own operators must not eat the budget either: 100 tokens each
+    # carrying an `and` is 0 operations, not 100.
+    it "does not spend the budget on operators inside field names" do
+      expect(codes(Array.new(100) { |i| "{Sales and Marketing #{i}}" }.join(" + "))).to eq(
+        [Kula::Formula::Errors::TOO_MANY_REFERENCES]
+      )
     end
 
     # Longest first: a two-character operator is one operation, not two.
