@@ -30,6 +30,41 @@ describe Dentaku::AST::StringFunctions::Left do
     expect(subject.value('string' => 'ABCDEFG', 'length' => '4')).to eq 'ABCD'
   end
 
+  # humanize exists for ANY function that turns a number into text, and shipped
+  # used by Concat alone -- so a cast number field reached the siblings as
+  # "0.234e3" and left(.., 3) answered "0.2". Nothing refuses a numeric argument
+  # to them: the type checker compares the formula's RESULT type only.
+  describe 'a numeric argument to the other string functions' do
+    let(:calculator) { Dentaku::Calculator.new }
+    let(:context) { {'salary' => BigDecimal('234')} }
+
+    {
+      'left(salary, 3)' => '234',
+      'right(salary, 3)' => '234',
+      'mid(salary, 1, 3)' => '234',
+      'substitute(salary, "2", "9")' => '934'
+    }.each do |formula, expected|
+      it "renders the number as a person writes it in #{formula}" do
+        expect(calculator.evaluate!(formula, context)).to eq(expected)
+      end
+    end
+
+    it 'measures the humanized length, not the BigDecimal notation' do
+      expect(calculator.evaluate!('len(salary)', context)).to eq(3)
+    end
+
+    it 'searches the humanized text' do
+      expect(calculator.evaluate!('find("3", salary)', context)).to eq(2)
+      expect(calculator.evaluate!('contains("23", salary)', context)).to be(true)
+      # "0.234e3" contained "e3" and this answered true.
+      expect(calculator.evaluate!('contains("e3", salary)', context)).to be(false)
+    end
+
+    it 'renders a Float argument without its decimal tail' do
+      expect(calculator.evaluate!('left(f, 3)', {'f' => 234.0})).to eq('234')
+    end
+  end
+
   it 'has the proper type' do
     expect(subject.type).to eq(:string)
   end
@@ -68,6 +103,41 @@ describe Dentaku::AST::StringFunctions::Right do
     expect(subject.value).to eq 'DEFG'
   end
 
+  # humanize exists for ANY function that turns a number into text, and shipped
+  # used by Concat alone -- so a cast number field reached the siblings as
+  # "0.234e3" and left(.., 3) answered "0.2". Nothing refuses a numeric argument
+  # to them: the type checker compares the formula's RESULT type only.
+  describe 'a numeric argument to the other string functions' do
+    let(:calculator) { Dentaku::Calculator.new }
+    let(:context) { {'salary' => BigDecimal('234')} }
+
+    {
+      'left(salary, 3)' => '234',
+      'right(salary, 3)' => '234',
+      'mid(salary, 1, 3)' => '234',
+      'substitute(salary, "2", "9")' => '934'
+    }.each do |formula, expected|
+      it "renders the number as a person writes it in #{formula}" do
+        expect(calculator.evaluate!(formula, context)).to eq(expected)
+      end
+    end
+
+    it 'measures the humanized length, not the BigDecimal notation' do
+      expect(calculator.evaluate!('len(salary)', context)).to eq(3)
+    end
+
+    it 'searches the humanized text' do
+      expect(calculator.evaluate!('find("3", salary)', context)).to eq(2)
+      expect(calculator.evaluate!('contains("23", salary)', context)).to be(true)
+      # "0.234e3" contained "e3" and this answered true.
+      expect(calculator.evaluate!('contains("e3", salary)', context)).to be(false)
+    end
+
+    it 'renders a Float argument without its decimal tail' do
+      expect(calculator.evaluate!('left(f, 3)', {'f' => 234.0})).to eq('234')
+    end
+  end
+
   it 'has the proper type' do
     expect(subject.type).to eq(:string)
   end
@@ -102,6 +172,41 @@ describe Dentaku::AST::StringFunctions::Mid do
   it 'accepts strings as offset and length if they can be parsed to a number' do
     subject = described_class.new(literal('ABCDEFG'), literal('4'), literal('2'))
     expect(subject.value).to eq 'DE'
+  end
+
+  # humanize exists for ANY function that turns a number into text, and shipped
+  # used by Concat alone -- so a cast number field reached the siblings as
+  # "0.234e3" and left(.., 3) answered "0.2". Nothing refuses a numeric argument
+  # to them: the type checker compares the formula's RESULT type only.
+  describe 'a numeric argument to the other string functions' do
+    let(:calculator) { Dentaku::Calculator.new }
+    let(:context) { {'salary' => BigDecimal('234')} }
+
+    {
+      'left(salary, 3)' => '234',
+      'right(salary, 3)' => '234',
+      'mid(salary, 1, 3)' => '234',
+      'substitute(salary, "2", "9")' => '934'
+    }.each do |formula, expected|
+      it "renders the number as a person writes it in #{formula}" do
+        expect(calculator.evaluate!(formula, context)).to eq(expected)
+      end
+    end
+
+    it 'measures the humanized length, not the BigDecimal notation' do
+      expect(calculator.evaluate!('len(salary)', context)).to eq(3)
+    end
+
+    it 'searches the humanized text' do
+      expect(calculator.evaluate!('find("3", salary)', context)).to eq(2)
+      expect(calculator.evaluate!('contains("23", salary)', context)).to be(true)
+      # "0.234e3" contained "e3" and this answered true.
+      expect(calculator.evaluate!('contains("e3", salary)', context)).to be(false)
+    end
+
+    it 'renders a Float argument without its decimal tail' do
+      expect(calculator.evaluate!('left(f, 3)', {'f' => 234.0})).to eq('234')
+    end
   end
 
   it 'has the proper type' do
@@ -172,6 +277,41 @@ describe Dentaku::AST::StringFunctions::Substitute do
     expect(subject.value).to eq 'ABCFG'
   end
 
+  # humanize exists for ANY function that turns a number into text, and shipped
+  # used by Concat alone -- so a cast number field reached the siblings as
+  # "0.234e3" and left(.., 3) answered "0.2". Nothing refuses a numeric argument
+  # to them: the type checker compares the formula's RESULT type only.
+  describe 'a numeric argument to the other string functions' do
+    let(:calculator) { Dentaku::Calculator.new }
+    let(:context) { {'salary' => BigDecimal('234')} }
+
+    {
+      'left(salary, 3)' => '234',
+      'right(salary, 3)' => '234',
+      'mid(salary, 1, 3)' => '234',
+      'substitute(salary, "2", "9")' => '934'
+    }.each do |formula, expected|
+      it "renders the number as a person writes it in #{formula}" do
+        expect(calculator.evaluate!(formula, context)).to eq(expected)
+      end
+    end
+
+    it 'measures the humanized length, not the BigDecimal notation' do
+      expect(calculator.evaluate!('len(salary)', context)).to eq(3)
+    end
+
+    it 'searches the humanized text' do
+      expect(calculator.evaluate!('find("3", salary)', context)).to eq(2)
+      expect(calculator.evaluate!('contains("23", salary)', context)).to be(true)
+      # "0.234e3" contained "e3" and this answered true.
+      expect(calculator.evaluate!('contains("e3", salary)', context)).to be(false)
+    end
+
+    it 'renders a Float argument without its decimal tail' do
+      expect(calculator.evaluate!('left(f, 3)', {'f' => 234.0})).to eq('234')
+    end
+  end
+
   it 'has the proper type' do
     expect(subject.type).to eq(:string)
   end
@@ -232,6 +372,41 @@ describe Dentaku::AST::StringFunctions::Concat do
     expect(described_class.new(literal(Float::INFINITY)).value).to eq('Infinity')
     expect(described_class.new(literal(Float::NAN)).value).to eq('NaN')
     expect(described_class.new(literal(BigDecimal('Infinity'))).value).to eq('Infinity')
+  end
+
+  # humanize exists for ANY function that turns a number into text, and shipped
+  # used by Concat alone -- so a cast number field reached the siblings as
+  # "0.234e3" and left(.., 3) answered "0.2". Nothing refuses a numeric argument
+  # to them: the type checker compares the formula's RESULT type only.
+  describe 'a numeric argument to the other string functions' do
+    let(:calculator) { Dentaku::Calculator.new }
+    let(:context) { {'salary' => BigDecimal('234')} }
+
+    {
+      'left(salary, 3)' => '234',
+      'right(salary, 3)' => '234',
+      'mid(salary, 1, 3)' => '234',
+      'substitute(salary, "2", "9")' => '934'
+    }.each do |formula, expected|
+      it "renders the number as a person writes it in #{formula}" do
+        expect(calculator.evaluate!(formula, context)).to eq(expected)
+      end
+    end
+
+    it 'measures the humanized length, not the BigDecimal notation' do
+      expect(calculator.evaluate!('len(salary)', context)).to eq(3)
+    end
+
+    it 'searches the humanized text' do
+      expect(calculator.evaluate!('find("3", salary)', context)).to eq(2)
+      expect(calculator.evaluate!('contains("23", salary)', context)).to be(true)
+      # "0.234e3" contained "e3" and this answered true.
+      expect(calculator.evaluate!('contains("e3", salary)', context)).to be(false)
+    end
+
+    it 'renders a Float argument without its decimal tail' do
+      expect(calculator.evaluate!('left(f, 3)', {'f' => 234.0})).to eq('234')
+    end
   end
 
   it 'has the proper type' do

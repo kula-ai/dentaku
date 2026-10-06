@@ -32,7 +32,10 @@ module Kula
       #
       # Argument lists are not counted. They parse iteratively, so max(0, 0, ...)
       # with a thousand arguments is safe where the same count of binary operators
-      # is not.
+      # is not. A negative literal in one does count, because a minus is counted
+      # whatever it means -- so max(-1, -2, ...) past 200 arguments is refused for
+      # operations it does not perform. Telling the two apart needs the tokenizer,
+      # which is the whole reason this counts the source.
       MAX_OPERATIONS = 200
 
       # The binary operators the language offers -- arithmetic, bitwise, COMPARISON
@@ -51,7 +54,7 @@ module Kula
       #
       # Longest first, so `<=` is one operation rather than `<` and `=`. The word
       # operators are bounded, so a field token like {born_or_raised} is not three.
-      OPERATION_PATTERN = %r{<=|>=|<>|!=|<<|>>|&&|\|\||[+\-*/%^<>=&|]|\b(?:and|or|xor)\b}i
+      OPERATION_PATTERN = %r{<=|>=|<>|!=|==|<<|>>|&&|\|\||[+\-*/%^<>=&|]|\b(?:and|or|xor)\b}i
 
       module_function
 

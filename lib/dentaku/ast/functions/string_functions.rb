@@ -58,7 +58,7 @@ module Dentaku
         end
 
         def value(context = {})
-          string = @string.value(context).to_s
+          string = StringFunctions.humanize(@string.value(context))
           length = Dentaku::NumericParser.ensure_numeric!(@length.value(context)).to_i
           negative_argument_failure('LEFT') if length < 0
           string[0, length]
@@ -80,7 +80,7 @@ module Dentaku
         end
 
         def value(context = {})
-          string = @string.value(context).to_s
+          string = StringFunctions.humanize(@string.value(context))
           length = Dentaku::NumericParser.ensure_numeric!(@length.value(context)).to_i
           negative_argument_failure('RIGHT') if length < 0
           string[length * -1, length] || string
@@ -102,7 +102,7 @@ module Dentaku
         end
 
         def value(context = {})
-          string = @string.value(context).to_s
+          string = StringFunctions.humanize(@string.value(context))
           offset = Dentaku::NumericParser.ensure_numeric!(@offset.value(context)).to_i
           negative_argument_failure('MID', 'offset') if offset < 0
           length = Dentaku::NumericParser.ensure_numeric!(@length.value(context)).to_i
@@ -126,7 +126,7 @@ module Dentaku
         end
 
         def value(context = {})
-          string = @string.value(context).to_s
+          string = StringFunctions.humanize(@string.value(context))
           string.length
         end
 
@@ -151,8 +151,8 @@ module Dentaku
 
         def value(context = {})
           needle = @needle.value(context)
-          needle = needle.to_s unless needle.is_a?(Regexp)
-          haystack = @haystack.value(context).to_s
+          needle = StringFunctions.humanize(needle) unless needle.is_a?(Regexp)
+          haystack = StringFunctions.humanize(@haystack.value(context))
           pos = haystack.index(needle)
           pos && pos + 1
         end
@@ -177,10 +177,10 @@ module Dentaku
         end
 
         def value(context = {})
-          original = @original.value(context).to_s
+          original = StringFunctions.humanize(@original.value(context))
           search = @search.value(context)
-          search = search.to_s unless search.is_a?(Regexp)
-          replacement = @replacement.value(context).to_s
+          search = StringFunctions.humanize(search) unless search.is_a?(Regexp)
+          replacement = StringFunctions.humanize(@replacement.value(context))
           original.sub(search, replacement)
         end
       end
@@ -218,7 +218,8 @@ module Dentaku
         end
 
         def value(context = {})
-          @haystack.value(context).to_s.include? @needle.value(context).to_s
+          StringFunctions.humanize(@haystack.value(context))
+            .include?(StringFunctions.humanize(@needle.value(context)))
         end
 
         def type

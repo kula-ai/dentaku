@@ -115,6 +115,15 @@ RSpec.describe Kula::Formula::Limits do
     # The two-character logical forms are one operation, not two. Counted by the
     # single-character class, `&& ` and `|| ` each cost double and a chain of them
     # was refused at about half the stated cap.
+    # == is a real comparator in this fork (token_scanner's eq alternate), and it
+    # fell through to the single-character class -- so the effective cap was 100
+    # and the actual handed to the admin was double.
+    it "counts an equality operator written as == once" do
+      expect(described_class.check("1" + (" == 1" * max_ops)).map(&:code)).to be_empty
+      expect(described_class.check("1" + (" == 1" * (max_ops + 1))).first.detail)
+        .to eq({limit: max_ops, actual: max_ops + 1})
+    end
+
     it "counts a two-character logical operator once" do
       expect(described_class.check("1" + (" && 1" * max_ops)).map(&:code)).to be_empty
       expect(described_class.check("1" + (" || 1" * max_ops)).map(&:code)).to be_empty
