@@ -46,7 +46,9 @@ module Kula
           stored: stored,
           dependencies: @resolver.dependencies(stored),
           diagnostics: unknown_identifiers(ast) + unsupported_constructs(ast) +
-            unknown_functions(ast) + variadic_arity(ast) + type_checker.check(ast, expected: expected_type),
+            unknown_functions(ast) + variadic_arity(ast) + invalid_units(ast) +
+              non_logical_conditions(ast, type_checker) +
+              type_checker.check(ast, expected: expected_type),
           ast: ast
         )
       rescue Resolver::UnknownToken => e
@@ -129,6 +131,11 @@ module Kula
       # then asks Ruby for a number with hundreds of millions of digits —
       # synchronously, wherever the host evaluates. Budgets bound the source, not
       # the result, so the operator has to go.
+      # dateadd(timestamp, amount, unit) and datediff(later, earlier, unit): the
+      # unit is the third argument in both.
+      UNIT_FUNCTIONS = %w[dateadd datediff].freeze
+      UNIT_ARGUMENT = 2
+
       UNSUPPORTED_NODES = [
         ::Dentaku::AST::Case,
         ::Dentaku::AST::Exponentiation,
@@ -174,6 +181,46 @@ module Kula
 
           found << Diagnostic.new(code: Errors::SYNTAX,
             detail: {function: name, given: given, expects: allowed})
+        end
+        found.uniq(&:to_h)
+      end
+
+      # A dateadd/datediff unit the readers do not know. Only a STRING LITERAL is
+      # checked: a unit arriving from a field cannot be known while the admin is
+      # typing, and guessing would refuse a formula that works. The literal is
+      # the case reported -- a typo -- and the one authoring can do something
+      # about.
+      def invalid_units(ast)
+        found = []
+        AstWalk.each_node(ast) do |node|
+          next unless node.is_a?(::Dentaku::AST::Function)
+
+          name = AstWalk.node_name(node)
+          next unless UNIT_FUNCTIONS.include?(name)
+
+          unit = AstWalk.children(node)[UNIT_ARGUMENT]
+          next unless unit.is_a?(::Dentaku::AST::String)
+          next if Catalog::DATE_UNITS.include?(unit.value.to_s.downcase)
+
+          found << Diagnostic.new(code: Errors::INVALID_UNIT,
+            detail: {function: name, unit: unit.value.to_s, expects: Catalog::DATE_UNITS})
+        end
+        found.uniq(&:to_h)
+      end
+
+      # An if() whose condition is not a boolean. It used to answer THEN for any
+      # of them -- 0 and "" included -- so the wrong branch computed into an
+      # offer with nothing said. A type the checker cannot determine is left
+      # alone, as everywhere else: never reject on a guess.
+      def non_logical_conditions(ast, type_checker)
+        found = []
+        AstWalk.each_node(ast) do |node|
+          next unless node.is_a?(::Dentaku::AST::If)
+
+          actual = type_checker.result_type(AstWalk.children(node).first)
+          next if actual.nil? || actual == :logical || actual == TypeChecker::CONFLICT
+
+          found << Diagnostic.new(code: Errors::CONDITION_NOT_LOGICAL, detail: {actual: actual})
         end
         found.uniq(&:to_h)
       end

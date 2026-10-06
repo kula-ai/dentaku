@@ -49,8 +49,18 @@ module Kula
       # Beside the registrations, because the count a function takes is part of
       # declaring it. A function absent here is unrestricted: concat, min, max
       # and coalesce mean whatever number they are given.
+      # The units advance and difference accept. One statement, because the
+      # compiler refuses an unknown one at authoring and both readers below have
+      # to agree with that or the refusal is a lie.
+      DATE_UNITS = %w[day days week weeks month months year years].freeze
+
       VARIADIC_ARITY = {
         "date" => [1, 3].freeze,
+        # Registered upstream as ->(*args), so the parser's arity check passes an
+        # empty call: max() and min() answered nil while concat(), round(5.5,2,3)
+        # and abs(-5,3) were all refused. At least one, no ceiling.
+        "max" => (1..).freeze,
+        "min" => (1..).freeze,
         # from, to = args -- the second is optional and counts to today. A third
         # was silently dropped.
         "days_between" => [1, 2].freeze,

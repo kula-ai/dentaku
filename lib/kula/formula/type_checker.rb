@@ -33,7 +33,11 @@ module Kula
       # wants one, but they actually pass their operands through. Taking that
       # declared type would reject coalesce({Job title}, "n/a") on a text field —
       # the most obvious "show a fallback when blank" formula there is.
-      PASS_THROUGH = %w[coalesce ifnull].freeze
+      #
+      # max and min belong here for the same reason: they answer one of their
+      # arguments, so the declared :numeric let max(today(), today()) put an
+      # epoch in a number field unchecked.
+      PASS_THROUGH = %w[coalesce ifnull max min].freeze
 
       # Returned when operands disagree, as distinct from nil "could not tell".
       # Collapsing the two lets if(c, {number}, {text}) satisfy any expected type,
@@ -65,6 +69,16 @@ module Kula
           # dateadd and datediff, which say what unit they mean.
           if date_arithmetic?(node)
             CONFLICT
+          elsif pass_through?(node)
+            # Unified, not inferred: inferred_from_children answers nil when the
+            # children disagree, and check() lets nil through as "cannot tell" --
+            # so coalesce(1>0, 5) landed a boolean in a number field while the
+            # same mix inside an if, which unifies, was refused. It also made
+            # if(1=1, coalesce(1>0, 0), 0) pass, because the nil unified away.
+            #
+            # A pass-through answers one of its arguments, so disagreement is a
+            # real conflict rather than ignorance.
+            children(node).map { |child| result_type(child) }.reduce { |a, b| unify(a, b) }
           else
             declared(node) || inferred_from_children(node)
           end

@@ -22,6 +22,15 @@ module Kula
       UNKNOWN_FUNCTION = "err_formula_unknown_function"
       UNSUPPORTED_CONSTRUCT = "err_formula_unsupported_construct"
       DIVISION_BY_ZERO = "err_formula_division_by_zero"
+      # dateadd/datediff take a unit, and advance/difference were a case with no
+      # else -- so a typo'd one answered nil and authoring called the formula
+      # valid. Its own code, because the unit and the set it had to be in are
+      # what the author needs told, and only a detail can carry them.
+      INVALID_UNIT = "err_formula_invalid_unit"
+      # if() returned its THEN branch for ANY non-boolean condition, including 0
+      # and "", so `if({salary}, "haspay", "nopay")` wrote "haspay" on a zero
+      # salary. and/or already decline a non-boolean; this makes if agree.
+      CONDITION_NOT_LOGICAL = "err_formula_condition_not_logical"
       NOT_COMPUTABLE = "err_formula_not_computable"
       RESULT_TYPE_MISMATCH = "err_formula_result_type"
 

@@ -18,6 +18,51 @@ RSpec.describe Kula::Formula::TypeChecker do
 
   def type_of(source) = checker.result_type(calculator.ast(source))
 
+  # CORE-5505. coalesce/ifnull/max/min answer one of their ARGUMENTS, while the
+  # registry has them declaring :numeric. PASS_THROUGH already existed for the
+  # first two, but a pass-through fell to inferred_from_children, which answers
+  # nil when the children disagree -- and check() lets nil through as "cannot
+  # tell". So the same type mix that an if() refuses, because If unifies, was
+  # accepted here.
+  describe "a pass-through function" do
+    def codes(source, expected)
+      checker.check(calculator.ast(source), expected: expected).map(&:code)
+    end
+
+    {
+      "a boolean through coalesce" => %q{coalesce(1 > 0, 5)},
+      "a string through coalesce" => %q{coalesce("Y", 5)},
+      "a boolean through ifnull" => %q{ifnull(1 > 0, 5)},
+      "a date through max" => %q{max(f_date, f_date)},
+      "a boolean through min" => %q{min(1 > 0, 0)}
+    }.each do |label, source|
+      it "refuses #{label} on a number field" do
+        expect(codes(source, :numeric)).to eq([Kula::Formula::Errors::RESULT_TYPE_MISMATCH])
+      end
+    end
+
+    # The shape that defeated if()'s own check: the coalesce node reported nil,
+    # so unify(nil, numeric) answered numeric and the boolean travelled.
+    it "refuses a boolean wrapped in coalesce inside an if" do
+      expect(codes(%q{if(1 = 1, coalesce(1 > 0, 0), 0)}, :numeric))
+        .to eq([Kula::Formula::Errors::RESULT_TYPE_MISMATCH])
+    end
+
+    # What PASS_THROUGH exists for in the first place, and the reason the
+    # declared :numeric cannot simply be trusted.
+    it "still accepts a fallback whose type agrees with the field" do
+      expect(codes(%q{coalesce(f_str, "n/a")}, :string)).to be_empty
+      expect(codes(%q{coalesce(f_num, 0)}, :numeric)).to be_empty
+      expect(codes("max(f_num, 1, 2)", :numeric)).to be_empty
+      expect(codes(%q{ifnull(f_date, f_date)}, :date)).to be_empty
+    end
+
+    # A field of unknown kind is still "cannot tell", not a conflict.
+    it "leaves a mix involving an unknown kind alone" do
+      expect(codes("coalesce(f_unknown, 5)", :numeric)).to be_empty
+    end
+  end
+
   # A date is stored as an integer, but reading it as a number put a salary in a
   # date field as 1970-01-02 and an epoch in a currency field as a billion in
   # money — both with no diagnostic at all.

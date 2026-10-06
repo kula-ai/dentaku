@@ -22,6 +22,88 @@ RSpec.describe Kula::Formula::Compiler do
       expect(result.dependencies).to eq(%w[f_412 f_413])
     end
 
+    # CORE-5503. advance and difference are a case over the unit with no else, so
+    # an unrecognised one answered nil and authoring called the formula valid --
+    # the field then computed blank on every offer with nothing said anywhere.
+    describe "a dateadd/datediff unit" do
+      {
+        "a typo" => %q{dateadd(today(), 1, "monts")},
+        "a unit the readers do not offer" => %q{dateadd(today(), 1, "decades")},
+        "an empty one" => %q{dateadd(today(), 1, "")},
+        "one on datediff" => %q{datediff(today(), today(), "nonsense")}
+      }.each do |label, source|
+        it "refuses #{label}" do
+          result = compiler.compile(source)
+
+          expect(result.codes).to eq([Kula::Formula::Errors::INVALID_UNIT])
+        end
+      end
+
+      it "says which unit and what was expected, so the editor can name both" do
+        detail = compiler.compile(%q{dateadd(today(), 1, "monts")}).diagnostics.first.detail
+
+        expect(detail).to eq(function: "dateadd", unit: "monts",
+          expects: Kula::Formula::Catalog::DATE_UNITS)
+      end
+
+      it "accepts every unit the readers handle, in either case" do
+        Kula::Formula::Catalog::DATE_UNITS.each do |unit|
+          expect(compiler.compile(%{dateadd(today(), 1, "#{unit}")}).codes).to be_empty
+          expect(compiler.compile(%{dateadd(today(), 1, "#{unit.upcase}")}).codes).to be_empty
+        end
+      end
+
+      # A unit arriving from a field cannot be known while the admin is typing,
+      # and guessing would refuse a formula that works.
+      it "leaves a unit it cannot see alone" do
+        expect(compiler.compile("dateadd(today(), 1, s_title)").codes).to be_empty
+      end
+    end
+
+    # CORE-5503. Registered upstream as ->(*args), so the parser's arity check
+    # passed an empty call where concat() and abs(-5, 3) are both refused.
+    describe "max/min arity" do
+      it "refuses a call with no arguments, under the code a wrong count already has" do
+        expect(compiler.compile("max()").codes).to eq([Kula::Formula::Errors::SYNTAX])
+        expect(compiler.compile("min()").codes).to eq([Kula::Formula::Errors::SYNTAX])
+      end
+
+      it "accepts one argument or many" do
+        expect(compiler.compile("max(1)").codes).to be_empty
+        expect(compiler.compile("max(1, 2, 3)").codes).to be_empty
+        expect(compiler.compile("min(4, 5)").codes).to be_empty
+      end
+    end
+
+    # CORE-5504. if() answered its THEN branch for ANY non-boolean condition, 0
+    # and "" included, so `if({salary}, "haspay", "nopay")` wrote "haspay" on a
+    # zero salary. and/or already decline a non-boolean.
+    describe "an if() condition" do
+      {
+        "a number" => %q{if(5, "T", "E")},
+        "zero" => %q{if(0, "T", "E")},
+        "an empty string" => %q{if("", "T", "E")},
+        "a numeric field" => %q{if({Base salary}, "T", "E")}
+      }.each do |label, source|
+        it "refuses #{label}" do
+          result = compiler.compile(source)
+
+          expect(result.codes).to include(Kula::Formula::Errors::CONDITION_NOT_LOGICAL)
+        end
+      end
+
+      it "names the type it was given" do
+        detail = compiler.compile(%q{if(5, "T", "E")}).diagnostics.first.detail
+
+        expect(detail).to eq(actual: :numeric)
+      end
+
+      it "accepts a real comparison" do
+        expect(compiler.compile(%q{if(1 = 2, "T", "E")}).codes).to be_empty
+        expect(compiler.compile(%q{if({Base salary} > 0, "T", "E")}).codes).to be_empty
+      end
+    end
+
     it "reports an unknown field with its position rather than raising" do
       result = compiler.compile("{Base salary} + {Nonsense}")
 
