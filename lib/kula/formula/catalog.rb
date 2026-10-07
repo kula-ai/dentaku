@@ -382,9 +382,11 @@ module Kula
           ::Date.new(date.year, first_month + 2, -1)
         end
 
-        # An unrecognised unit yields nil rather than quietly meaning days: the
-        # unit is an author-typed literal, so a typo is the expected failure and
-        # should surface rather than produce a plausible wrong number.
+        # An unrecognised unit raises rather than quietly meaning days: the unit is
+        # an author-typed literal, so a typo is the expected failure and should
+        # surface rather than produce a plausible wrong number. normalize_unit is
+        # the only gate, so a unit ADDED to DATE_UNITS has to get a branch here
+        # too -- no else, because with the constant as it stands one is dead code.
         def advance(date, amount, unit)
           case normalize_unit(unit, "dateadd")
           when "day" then date + amount

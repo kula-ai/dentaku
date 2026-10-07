@@ -57,10 +57,10 @@ module Kula
       # Carries the function so the runtime diagnostic says what the authoring
       # one does -- the editor names both, and a reader that only knows the unit
       # cannot tell dateadd from datediff.
-      def initialize(unit, function = nil)
+      def initialize(unit, function)
         @unit = unit
         @function = function
-        super("#{function || "unit"} must be one of #{Errors::DATE_UNIT_MESSAGE}")
+        super("#{function} must be one of #{Errors::DATE_UNIT_MESSAGE}")
       end
     end
 

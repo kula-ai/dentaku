@@ -161,7 +161,16 @@ module Kula
       # so all-dates answers :date; a date mixed with a count is the same kind of
       # conflict date arithmetic already is.
       def numeric_aggregate_type(types)
-        return CONFLICT if types.any? { |type| type == :string || type == :logical }
+        # Every other path propagates a conflicting child; this one answered
+        # :numeric for it, which let coalesce(1>0, 5) back into a number field
+        # one function up -- the exact smuggle the unify above closes.
+        return CONFLICT if types.include?(CONFLICT)
+        # A boolean never coerces, so it is a conflict. Text is NOT: as_number("7")
+        # is 7, and a single-line field holding a number inside max computes fine
+        # today, so whether an operand coerces is left to the argument-type check.
+        # The result stays :numeric either way, which is what still refuses
+        # max({Title}, {Title}) on a text field.
+        return CONFLICT if types.include?(:logical)
         return :date if types == [:date]
 
         types.include?(:date) ? CONFLICT : :numeric

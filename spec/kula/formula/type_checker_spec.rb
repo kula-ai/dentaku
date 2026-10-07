@@ -57,13 +57,34 @@ RSpec.describe Kula::Formula::TypeChecker do
       expect(codes(%q{ifnull(f_date, f_date)}, :date)).to be_empty
     end
 
-    # max/min are NOT pass-through: they coerce every argument through as_number
-    # and raise on text, so their result really is numeric. Typed as pass-through,
+    # max/min are NOT pass-through: they coerce every argument through as_number,
+    # so their result is numeric whatever went in. Typed as pass-through,
     # max(f_str, f_str) answered :string, a TEXT field accepted it, and it then
     # computed blank on every offer -- refused before that change and after it.
-    it "refuses max over text, which it cannot coerce" do
+    it "answers numeric for max over text, so a text field refuses it" do
       expect(codes("max(f_str, f_str)", :string)).to eq([Kula::Formula::Errors::RESULT_TYPE_MISMATCH])
       expect(codes("min(1 > 0, 0)", :numeric)).to eq([Kula::Formula::Errors::RESULT_TYPE_MISMATCH])
+    end
+
+    # A boolean never coerces, but a numeric string does -- as_number("7") is 7,
+    # and a single-line field holding a number inside max computes correctly. Only
+    # the argument-type check may refuse an operand on its value; typing it as a
+    # conflict refused max(f_str, 0) on a NUMBER field, which works today.
+    it "leaves a text operand of max to the argument-type check" do
+      expect(codes(%q{max("7", 1)}, :numeric)).to be_empty
+      expect(codes("max(f_str, 0)", :numeric)).to be_empty
+    end
+
+    # Every other path propagates a conflicting child. This one answered :numeric
+    # for it, which let the boolean back into a number field one function up --
+    # the same smuggle the pass-through unify closes, through max instead of if.
+    it "propagates a conflicting child through max and min" do
+      expect(codes("max(coalesce(1 > 0, 5), 0)", :numeric))
+        .to eq([Kula::Formula::Errors::RESULT_TYPE_MISMATCH])
+      expect(codes(%q{min(if(1 = 1, "a", 1), 0)}, :numeric))
+        .to eq([Kula::Formula::Errors::RESULT_TYPE_MISMATCH])
+      expect(codes("max(coalesce(f_date, 5), 0)", :numeric))
+        .to eq([Kula::Formula::Errors::RESULT_TYPE_MISMATCH])
     end
 
     # An epoch is carried as a number, so the declared :numeric put a date in a
