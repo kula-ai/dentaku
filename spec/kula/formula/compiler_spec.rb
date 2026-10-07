@@ -69,7 +69,8 @@ RSpec.describe Kula::Formula::Compiler do
 
         expect(value).to be_nil
         expect(diagnostic.code).to eq(Kula::Formula::Errors::INVALID_UNIT)
-        expect(diagnostic.detail).to eq(unit: "monts", expects: Kula::Formula::Catalog::DATE_UNITS)
+        expect(diagnostic.detail)
+          .to eq(function: "dateadd", unit: "monts", expects: Kula::Formula::Catalog::DATE_UNITS)
       end
     end
 

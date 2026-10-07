@@ -57,6 +57,25 @@ RSpec.describe Kula::Formula::TypeChecker do
       expect(codes(%q{ifnull(f_date, f_date)}, :date)).to be_empty
     end
 
+    # max/min are NOT pass-through: they coerce every argument through as_number
+    # and raise on text, so their result really is numeric. Typed as pass-through,
+    # max(f_str, f_str) answered :string, a TEXT field accepted it, and it then
+    # computed blank on every offer -- refused before that change and after it.
+    it "refuses max over text, which it cannot coerce" do
+      expect(codes("max(f_str, f_str)", :string)).to eq([Kula::Formula::Errors::RESULT_TYPE_MISMATCH])
+      expect(codes("min(1 > 0, 0)", :numeric)).to eq([Kula::Formula::Errors::RESULT_TYPE_MISMATCH])
+    end
+
+    # An epoch is carried as a number, so the declared :numeric put a date in a
+    # number field. All-dates answers :date; a date mixed with a count is the
+    # same conflict date arithmetic already is.
+    it "answers date only when every operand is one" do
+      expect(codes("max(f_date, f_date)", :date)).to be_empty
+      expect(codes("max(f_date, f_date)", :numeric)).to eq([Kula::Formula::Errors::RESULT_TYPE_MISMATCH])
+      expect(codes("max(f_date, 1)", :date)).to eq([Kula::Formula::Errors::RESULT_TYPE_MISMATCH])
+      expect(codes("max(f_num, 1, 2)", :numeric)).to be_empty
+    end
+
     # A field of unknown kind is still "cannot tell", not a conflict.
     it "leaves a mix involving an unknown kind alone" do
       expect(codes("coalesce(f_unknown, 5)", :numeric)).to be_empty

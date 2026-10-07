@@ -52,11 +52,15 @@ module Kula
     # Dentaku::ArgumentError it became NOT_COMPUTABLE -- "waiting on an input" --
     # which sends the recruiter to fill in a field over an admin's typo.
     class InvalidUnit < ::Dentaku::Error
-      attr_reader :unit
+      attr_reader :unit, :function
 
-      def initialize(unit)
+      # Carries the function so the runtime diagnostic says what the authoring
+      # one does -- the editor names both, and a reader that only knows the unit
+      # cannot tell dateadd from datediff.
+      def initialize(unit, function = nil)
         @unit = unit
-        super("unit must be one of #{Errors::DATE_UNIT_MESSAGE}")
+        @function = function
+        super("#{function || "unit"} must be one of #{Errors::DATE_UNIT_MESSAGE}")
       end
     end
 

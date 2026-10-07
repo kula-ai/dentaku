@@ -34,10 +34,18 @@ module Kula
       # declared type would reject coalesce({Job title}, "n/a") on a text field —
       # the most obvious "show a fallback when blank" formula there is.
       #
-      # max and min belong here for the same reason: they answer one of their
-      # arguments, so the declared :numeric let max(today(), today()) put an
-      # epoch in a number field unchecked.
-      PASS_THROUGH = %w[coalesce ifnull max min].freeze
+      PASS_THROUGH = %w[coalesce ifnull].freeze
+
+      # max and min are NOT pass-through: they coerce every argument through
+      # as_number and raise on text, so their result really is numeric. Treating
+      # them as pass-through typed max({Title}, {Title}) as :string, which a text
+      # field then accepted and which computes blank on every offer.
+      #
+      # The one thing the declared :numeric gets wrong is dates: an epoch is
+      # carried as a number, so max(today(), today()) answered :numeric and put a
+      # date in a number field. Date only when EVERY operand is one -- a mix is a
+      # conflict, which is what comparing a date with a count already is.
+      DATE_PRESERVING = %w[max min].freeze
 
       # Returned when operands disagree, as distinct from nil "could not tell".
       # Collapsing the two lets if(c, {number}, {text}) satisfy any expected type,
@@ -69,6 +77,8 @@ module Kula
           # dateadd and datediff, which say what unit they mean.
           if date_arithmetic?(node)
             CONFLICT
+          elsif date_preserving?(node)
+            numeric_aggregate_type(children(node).map { |child| result_type(child) }.compact.uniq)
           elsif pass_through?(node)
             # Unified, not inferred: inferred_from_children answers nil when the
             # children disagree, and check() lets nil through as "cannot tell" --
@@ -143,6 +153,24 @@ module Kula
         return false unless node.is_a?(::Dentaku::AST::Arithmetic)
 
         children(node).any? { |child| result_type(child) == :date }
+      end
+
+      # max/min coerce every argument through as_number, so an operand they cannot
+      # read is a conflict rather than a result type -- text or a boolean makes
+      # the formula answer blank on every offer. An epoch is carried as a number,
+      # so all-dates answers :date; a date mixed with a count is the same kind of
+      # conflict date arithmetic already is.
+      def numeric_aggregate_type(types)
+        return CONFLICT if types.any? { |type| type == :string || type == :logical }
+        return :date if types == [:date]
+
+        types.include?(:date) ? CONFLICT : :numeric
+      end
+
+      def date_preserving?(node)
+        return false unless node.is_a?(::Dentaku::AST::Function)
+
+        DATE_PRESERVING.include?(AstWalk.node_name(node))
       end
 
       def pass_through?(node)

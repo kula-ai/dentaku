@@ -82,7 +82,7 @@ module Kula
         # be named -- and it has to be named the same way the compiler names a bad
         # literal, or the two disagree about the same mistake.
         [nil, Diagnostic.new(code: Errors::INVALID_UNIT,
-          detail: {unit: e.unit.to_s, expects: Catalog::DATE_UNITS})]
+          detail: {function: e.function, unit: e.unit.to_s, expects: Catalog::DATE_UNITS})]
       rescue ::Dentaku::ArgumentError
         # Descends from ::ArgumentError rather than Dentaku::Error, so it needs
         # naming: it is what an operation over an unanswered field raises.
@@ -207,7 +207,10 @@ module Kula
 
           unit = AstWalk.children(node)[UNIT_ARGUMENT]
           next unless unit.is_a?(::Dentaku::AST::String)
-          next if Catalog::DATE_UNITS.include?(unit.value.to_s.downcase)
+          # Stripped, exactly as normalize_unit strips: the reader accepts " days"
+          # and refusing it here would make authoring stricter than the thing it
+          # is describing.
+          next if Catalog::DATE_UNITS.include?(unit.value.to_s.strip.downcase)
 
           found << Diagnostic.new(code: Errors::INVALID_UNIT,
             detail: {function: name, unit: unit.value.to_s, expects: Catalog::DATE_UNITS})

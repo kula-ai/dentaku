@@ -386,7 +386,7 @@ module Kula
         # unit is an author-typed literal, so a typo is the expected failure and
         # should surface rather than produce a plausible wrong number.
         def advance(date, amount, unit)
-          case normalize_unit(unit)
+          case normalize_unit(unit, "dateadd")
           when "day" then date + amount
           when "week" then date + (amount * 7)
           when "month" then date >> amount
@@ -398,10 +398,10 @@ module Kula
         # field and stays tolerated; UNKNOWN raises, because the compiler refuses
         # a bad literal and a bad value arriving from a field has to answer the
         # same way rather than silently computing nothing.
-        def normalize_unit(unit)
+        def normalize_unit(unit, function)
           text = unit.to_s.strip.downcase
           return nil if text.empty?
-          raise ::Kula::Formula::InvalidUnit, unit unless DATE_UNITS.include?(text)
+          raise ::Kula::Formula::InvalidUnit.new(unit, function) unless DATE_UNITS.include?(text)
 
           text.delete_suffix("s")
         end
@@ -416,7 +416,7 @@ module Kula
 
           days = (to - from).to_i
 
-          case normalize_unit(unit)
+          case normalize_unit(unit, "datediff")
           when "day" then days
           # truncate, not integer division: / floors toward -infinity, so
           # -64 / 7 is -10 while 64 / 7 is 9 and datediff(a, b) != -datediff(b, a).
