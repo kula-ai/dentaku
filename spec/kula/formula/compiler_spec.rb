@@ -58,6 +58,19 @@ RSpec.describe Kula::Formula::Compiler do
       it "leaves a unit it cannot see alone" do
         expect(compiler.compile("dateadd(today(), 1, s_title)").codes).to be_empty
       end
+
+      # ...and because authoring cannot see it, EVALUATION has to name it. It used
+      # to answer nil, which the host reads as "waiting on an input", so a formula
+      # that can never compute sent the recruiter to fill in a field. The same
+      # code the compiler gives a bad literal, so the two agree about one mistake.
+      it "names the same code at evaluation for a unit that came from a field" do
+        result = compiler.compile("dateadd(today(), 1, s_title)")
+        value, diagnostic = compiler.evaluate!(result.stored, {"s_title" => "monts"})
+
+        expect(value).to be_nil
+        expect(diagnostic.code).to eq(Kula::Formula::Errors::INVALID_UNIT)
+        expect(diagnostic.detail).to eq(unit: "monts", expects: Kula::Formula::Catalog::DATE_UNITS)
+      end
     end
 
     # CORE-5503, widened. The readers raise Dentaku::ArgumentError on a literal

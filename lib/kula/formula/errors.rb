@@ -40,7 +40,24 @@ module Kula
       NOT_COMPUTABLE = "err_formula_not_computable"
       RESULT_TYPE_MISMATCH = "err_formula_result_type"
 
-      ALL = constants.map { |name| const_get(name) }.select { |value| value.is_a?(::String) }.freeze
+      # Not a code: named here so the message and the refusal cannot drift.
+      DATE_UNIT_MESSAGE = "day, week, month, year"
+
+      ALL = constants.map { |name| const_get(name) }
+        .select { |value| value.is_a?(::String) && value.start_with?("err_") }.freeze
+    end
+
+    # Raised by the date readers for a unit they do not know. Its own class so
+    # evaluate! can answer the same code authoring does: mapped to
+    # Dentaku::ArgumentError it became NOT_COMPUTABLE -- "waiting on an input" --
+    # which sends the recruiter to fill in a field over an admin's typo.
+    class InvalidUnit < ::Dentaku::Error
+      attr_reader :unit
+
+      def initialize(unit)
+        @unit = unit
+        super("unit must be one of #{Errors::DATE_UNIT_MESSAGE}")
+      end
     end
 
     # One thing wrong with a formula. +position+ is a character offset into the

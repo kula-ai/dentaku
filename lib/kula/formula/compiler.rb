@@ -45,11 +45,10 @@ module Kula
           source: source,
           stored: stored,
           dependencies: @resolver.dependencies(stored),
-          diagnostics: unknown_identifiers(ast) + unsupported_constructs(ast) +
-            unknown_functions(ast) + variadic_arity(ast) + invalid_units(ast) +
-              invalid_argument_types(ast) +
-              non_logical_conditions(ast, type_checker) +
-              type_checker.check(ast, expected: expected_type),
+          diagnostics:
+            [unknown_identifiers(ast), unsupported_constructs(ast), unknown_functions(ast),
+              variadic_arity(ast), invalid_units(ast), invalid_argument_types(ast),
+              non_logical_conditions(ast), type_checker.check(ast, expected: expected_type)].flatten,
           ast: ast
         )
       rescue Resolver::UnknownToken => e
@@ -77,6 +76,13 @@ module Kula
         [nil, Diagnostic.new(code: Errors::DIVISION_BY_ZERO)]
       rescue ::Dentaku::UnboundVariableError => e
         [nil, Diagnostic.new(code: Errors::NOT_COMPUTABLE, detail: {unbound: Array(e.unbound_variables)})]
+      rescue InvalidUnit => e
+        # Before Dentaku::Error below, and its own code: a unit that arrives from
+        # a FIELD cannot be refused at authoring, so this is the only place it can
+        # be named -- and it has to be named the same way the compiler names a bad
+        # literal, or the two disagree about the same mistake.
+        [nil, Diagnostic.new(code: Errors::INVALID_UNIT,
+          detail: {unit: e.unit.to_s, expects: Catalog::DATE_UNITS})]
       rescue ::Dentaku::ArgumentError
         # Descends from ::ArgumentError rather than Dentaku::Error, so it needs
         # naming: it is what an operation over an unanswered field raises.
@@ -249,7 +255,7 @@ module Kula
       # of them -- 0 and "" included -- so the wrong branch computed into an
       # offer with nothing said. A type the checker cannot determine is left
       # alone, as everywhere else: never reject on a guess.
-      def non_logical_conditions(ast, type_checker)
+      def non_logical_conditions(ast)
         found = []
         AstWalk.each_node(ast) do |node|
           next unless node.is_a?(::Dentaku::AST::If)

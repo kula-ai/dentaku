@@ -47,8 +47,9 @@ module Kula
       # would not compute rather than the author as a formula to fix.
       #
       # Beside the registrations, because the count a function takes is part of
-      # declaring it. A function absent here is unrestricted: concat, min, max
-      # and coalesce mean whatever number they are given.
+      # declaring it. A function absent here is one the parser's own arity check
+      # already covers -- concat and ifnull among them -- so only the splat-
+      # registered ones need naming.
       # Argument positions that have to be a number, per function. Only a LITERAL
       # is checked -- a field reference cannot be known while the admin types, and
       # a numeric string coerces on purpose, so dateadd(today(), "7", "days")
@@ -79,6 +80,9 @@ module Kula
         # and abs(-5,3) were all refused. At least one, no ceiling.
         "max" => (1..).freeze,
         "min" => (1..).freeze,
+        # concat, ifnull and the rest are already refused by the parser; coalesce
+        # is the one aggregate the splat left unrestricted.
+        "coalesce" => (1..).freeze,
         # from, to = args -- the second is optional and counts to today. A third
         # was silently dropped.
         "days_between" => [1, 2].freeze,
@@ -382,12 +386,24 @@ module Kula
         # unit is an author-typed literal, so a typo is the expected failure and
         # should surface rather than produce a plausible wrong number.
         def advance(date, amount, unit)
-          case unit.to_s.downcase
-          when "day", "days" then date + amount
-          when "week", "weeks" then date + (amount * 7)
-          when "month", "months" then date >> amount
-          when "year", "years" then date >> (amount * 12)
+          case normalize_unit(unit)
+          when "day" then date + amount
+          when "week" then date + (amount * 7)
+          when "month" then date >> amount
+          when "year" then date >> (amount * 12)
           end
+        end
+
+        # The one place a unit is read. Absent is nil, which is an unanswered
+        # field and stays tolerated; UNKNOWN raises, because the compiler refuses
+        # a bad literal and a bad value arriving from a field has to answer the
+        # same way rather than silently computing nothing.
+        def normalize_unit(unit)
+          text = unit.to_s.strip.downcase
+          return nil if text.empty?
+          raise ::Kula::Formula::InvalidUnit, unit unless DATE_UNITS.include?(text)
+
+          text.delete_suffix("s")
         end
 
         # Whole days between the two dates, not raw epoch seconds: dividing
@@ -400,13 +416,13 @@ module Kula
 
           days = (to - from).to_i
 
-          case unit.to_s.downcase
-          when "day", "days" then days
+          case normalize_unit(unit)
+          when "day" then days
           # truncate, not integer division: / floors toward -infinity, so
           # -64 / 7 is -10 while 64 / 7 is 9 and datediff(a, b) != -datediff(b, a).
-          when "week", "weeks" then days.fdiv(7).truncate
-          when "month", "months" then months_between(later, earlier, zone)
-          when "year", "years" then months_between(later, earlier, zone).fdiv(12).truncate
+          when "week" then days.fdiv(7).truncate
+          when "month" then months_between(later, earlier, zone)
+          when "year" then months_between(later, earlier, zone).fdiv(12).truncate
           end
         end
 

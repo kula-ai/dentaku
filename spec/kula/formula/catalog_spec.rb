@@ -60,10 +60,32 @@ RSpec.describe Kula::Formula::Catalog do
     end
 
     # A typo'd unit is the expected failure mode for an author-typed literal, so
-    # it must surface rather than quietly meaning days.
-    it "yields nil for a unit it does not recognise" do
-      expect(calculator.evaluate!(%{dateadd(#{timestamp}, 3, "moth")})).to be_nil
-      expect(calculator.evaluate!(%{datediff(#{timestamp}, #{timestamp}, "moth")})).to be_nil
+    # it must surface rather than quietly meaning days. It used to answer nil,
+    # which the host reads as "this field has not computed yet" -- so a formula
+    # that can never compute looked like one waiting on an input, and the
+    # recruiter was sent to fill in a field over an admin's typo. The compiler
+    # refuses a bad LITERAL; this is the only place a bad value arriving from a
+    # field can be named.
+    it "raises for a unit it does not recognise, rather than answering nil" do
+      expect { calculator.evaluate!(%{dateadd(#{timestamp}, 3, "moth")}) }
+        .to raise_error(Kula::Formula::InvalidUnit, /day, week, month, year/)
+      expect { calculator.evaluate!(%{datediff(#{timestamp}, #{timestamp}, "moth")}) }
+        .to raise_error(Kula::Formula::InvalidUnit)
+    end
+
+    # An ABSENT unit is an unanswered field, not a typo, and stays tolerated.
+    it "still answers nil for an absent unit" do
+      expect(calculator.evaluate!(%{dateadd(#{timestamp}, 3, "")})).to be_nil
+      expect(calculator.evaluate!(%{dateadd(#{timestamp}, 3, "  ")})).to be_nil
+    end
+
+    # Singular, plural and case all reach the same reader, so the compiler's
+    # refusal and the reader's acceptance cannot disagree.
+    it "accepts every unit DATE_UNITS lists, in either case" do
+      Kula::Formula::Catalog::DATE_UNITS.each do |unit|
+        expect(calculator.evaluate!(%{dateadd(#{timestamp}, 0, "#{unit}")})).to be_a(Integer)
+        expect(calculator.evaluate!(%{dateadd(#{timestamp}, 0, "#{unit.upcase}")})).to be_a(Integer)
+      end
     end
 
     it "is date-granular, dropping time of day" do
