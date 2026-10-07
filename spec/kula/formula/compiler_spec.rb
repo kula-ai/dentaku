@@ -193,6 +193,25 @@ RSpec.describe Kula::Formula::Compiler do
       end
     end
 
+    # A conflicting condition is reported NOWHERE else: check() looks at the root
+    # only, and the root of an if/not is typed from its branches or declared
+    # :logical. Skipped as "never reject on a guess" it computed the wrong value
+    # 5504 exists to stop -- not(coalesce(0, 1 > 0)) answered false.
+    describe "a condition whose children disagree" do
+      it "refuses it through not() and if()" do
+        expect(compiler.compile("not(coalesce(0, 1 > 0))").codes)
+          .to include(Kula::Formula::Errors::CONDITION_NOT_LOGICAL)
+        expect(compiler.compile("if(coalesce(0, 1 > 0), 1, 2)").codes)
+          .to include(Kula::Formula::Errors::CONDITION_NOT_LOGICAL)
+      end
+
+      it "names the conflict the way check() does" do
+        detail = compiler.compile("not(coalesce(0, 1 > 0))").diagnostics.first.detail
+
+        expect(detail).to eq(function: "not", actual: :conflicting)
+      end
+    end
+
     # and/or already answer NOT_COMPUTABLE at runtime, which is a blank the
     # recruiter is told about rather than a wrong number. Left as they are, so
     # this pins that the check did not widen to them and tighten saved formulas.

@@ -272,10 +272,19 @@ module Kula
           next unless CONDITIONAL_NODES.any? { |type| node.is_a?(type) }
 
           actual = type_checker.result_type(AstWalk.children(node).first)
-          next if actual.nil? || actual == :logical || actual == TypeChecker::CONFLICT
+          # nil is skipped because the type is unknown. CONFLICT is NOT: it is a
+          # disagreement the checker has proven, and it is reported nowhere else
+          # -- check() looks at the ROOT only, and the root of an if/not is typed
+          # from its branches or declared :logical, so a conflicting condition
+          # below it was invisible. not(coalesce(0, 1 > 0)) computed false, which
+          # is the wrong value this guard exists to stop.
+          next if actual.nil? || actual == :logical
 
           found << Diagnostic.new(code: Errors::CONDITION_NOT_LOGICAL,
-            detail: {function: AstWalk.node_name(node), actual: actual})
+            detail: {function: AstWalk.node_name(node),
+                     # The word check() already uses for a conflict, so one
+                     # disagreement does not read two ways.
+                     actual: (actual == TypeChecker::CONFLICT) ? :conflicting : actual})
         end
         found.uniq(&:to_h)
       end
