@@ -62,7 +62,7 @@ module Kula
       rescue ::Dentaku::TokenizerError => e
         Result.failure(source, tokenizer_diagnostics(e))
       rescue ::Dentaku::ParseError => e
-        Result.failure(source, parse_diagnostic(e))
+        Result.failure(source, parse_diagnostic(e, stored))
       rescue ::Dentaku::ArgumentError => e
         # Dentaku::ArgumentError descends from ::ArgumentError, so it is not
         # covered by the rescues above. Named here so "compiling never raises"
@@ -338,9 +338,46 @@ module Kula
 
       # A mistyped function name is not a syntax error, and the parser already
       # distinguishes them.
-      def parse_diagnostic(error)
+      def parse_diagnostic(error, stored)
+        return percent_diagnostic(error) if ambiguous_percent?(error, stored)
+
         code = (error.reason == :undefined_function) ? Errors::UNKNOWN_FUNCTION : Errors::SYNTAX
         Diagnostic.new(code: code, position: error.meta[:position], detail: function_detail(error))
+      end
+
+      # A `%` the parser cannot place, because the token is both infix modulo and
+      # postfix percentage: `10 % -3` and `50% - 3` are one stream with two
+      # readings, and `100000 * 10% - 500` is the shape an author actually
+      # writes.
+      #
+      # Matched on the TOKENS, not the source. A source scan for "%" near "-"
+      # relabels an unrelated error in any formula containing both, and the
+      # parser's own report is not enough either: it blames whatever ENCLOSES
+      # the collision, which is Multiplication for the realistic case above and
+      # Percentage only for a bare two-term one. The one thing every ambiguous
+      # stream has is a mod token immediately followed by a negate -- which is
+      # exactly the collision, since `%` tokenizes as :mod either way.
+      #
+      # Still gated on the parser's reason, so a formula that merely CONTAINS
+      # that pair while failing for some other cause keeps the generic code.
+      def ambiguous_percent?(error, stored)
+        return false unless error.reason == :too_many_operands
+
+        tokens = ::Dentaku::Tokenizer.new.tokenize(stored)
+        tokens.each_cons(2).any? do |left, right|
+          left.category == :operator && left.value == :mod &&
+            right.category == :operator && right.value == :negate
+        end
+      rescue ::StandardError
+        # Tokenizing already succeeded once to reach the parser, so this cannot
+        # normally fire -- and if a bump ever makes it, the generic syntax code
+        # is still a true answer. Losing the original diagnostic would not be.
+        false
+      end
+
+      def percent_diagnostic(error)
+        Diagnostic.new(code: Errors::PERCENT_AMBIGUOUS, position: error.meta[:position],
+          detail: {operator: "%", readings: %w[modulo percent]})
       end
 
       def function_detail(error)

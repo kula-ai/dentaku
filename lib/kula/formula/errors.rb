@@ -46,6 +46,17 @@ module Kula
       # only place the author can be told. format_date is the remedy and is named
       # in the detail.
       DATE_NEEDS_FORMAT = "err_formula_date_needs_format"
+
+      # `%` is two operators: infix modulo and postfix percentage. So `10 % -3`
+      # is genuinely ambiguous -- "10 modulo -3" is -2 and "10 percent, minus 3"
+      # is -2.9 -- and `50% - 3` is the same stream read the other way. The
+      # parser refuses it, which is right: choosing a reading on the author's
+      # behalf made `100000 * 10% - 500` evaluate to 0.0 in kula.17, a silently
+      # wrong number in an offer letter, and was reverted in .18.
+      #
+      # Its own code only because err_formula_syntax told the author nothing and
+      # the remedy -- parenthesise the half you mean -- is not discoverable.
+      PERCENT_AMBIGUOUS = "err_formula_percent_ambiguous"
       NOT_COMPUTABLE = "err_formula_not_computable"
       RESULT_TYPE_MISMATCH = "err_formula_result_type"
 

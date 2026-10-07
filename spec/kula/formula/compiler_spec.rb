@@ -450,6 +450,54 @@ RSpec.describe Kula::Formula::Compiler do
         .to eq([Kula::Formula::Errors::DANGLING_REFERENCE])
     end
 
+    # CORE-5491. `%` is two operators -- infix modulo and postfix percentage --
+    # so `10 % -3` is one token stream with two readings: "10 modulo -3" is -2
+    # and "10 percent, minus 3" is -2.9. Refusing it is right; choosing a reading
+    # made `100000 * 10% - 500` answer 0.0 in kula.17 and was reverted. Its own
+    # code only because err_formula_syntax named nothing an author could act on.
+    describe "a percentage next to a sign" do
+      {
+        "a bare negative divisor" => "10 % -3",
+        "it unspaced" => "10 %-3",
+        "it spaced apart" => "10 % - 3",
+        "the stream read as a percentage" => "50% - 3",
+        "the shape an author actually writes" => "100000 * 10% - 500",
+        "one nested inside addition" => "1 + 50% - 3"
+      }.each do |label, source|
+        it "names the ambiguity for #{label}" do
+          result = compiler.compile(source)
+
+          expect(result.codes).to eq([Kula::Formula::Errors::PERCENT_AMBIGUOUS])
+        end
+      end
+
+      it "says which operator, and both readings" do
+        diagnostic = compiler.compile("10 % -3").diagnostics.first
+
+        expect(diagnostic.detail).to eq(operator: "%", readings: %w[modulo percent])
+        expect(diagnostic.position).to eq(6)
+      end
+
+      # The parser blames whatever ENCLOSES the collision -- Multiplication for
+      # the realistic shape, Percentage only for a bare two-term one -- so the
+      # check is on the tokens. These pin that it did not widen into a source
+      # scan: each contains a percentage, and each keeps the code it had.
+      it "leaves an unambiguous percentage alone" do
+        expect(compiler.compile("10 % (-3)").codes).to be_empty
+        expect(compiler.compile("(50%) - 3").codes).to be_empty
+        expect(compiler.compile("10 % 3").codes).to be_empty
+        expect(compiler.compile("-10 % 3").codes).to be_empty
+        expect(compiler.compile("2 * 50%").codes).to be_empty
+      end
+
+      # A real syntax error in a formula that merely CONTAINS a percentage: the
+      # mod and the negate are not adjacent, so it keeps the generic code.
+      it "does not claim the ambiguity for an unrelated syntax error" do
+        expect(compiler.compile("10 % 3 + * 2").codes).to eq([Kula::Formula::Errors::SYNTAX])
+        expect(compiler.compile("10 + * 3").codes).to eq([Kula::Formula::Errors::SYNTAX])
+      end
+    end
+
     # Not handle-shaped, so the old source scan never saw it.
     it "rejects a bare field name someone typed without braces" do
       expect(compiler.compile("revenue * 2").codes)
