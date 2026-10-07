@@ -254,19 +254,28 @@ module Kula
         false
       end
 
-      # An if() whose condition is not a boolean. It used to answer THEN for any
-      # of them -- 0 and "" included -- so the wrong branch computed into an
-      # offer with nothing said. A type the checker cannot determine is left
-      # alone, as everywhere else: never reject on a guess.
+      # An if() or not() whose condition is not a boolean. Both used to read any
+      # non-boolean as TRUE -- 0 and "" included -- so if() answered THEN and
+      # not() answered false, each computing a wrong value into an offer with
+      # nothing said. and()/or() are absent: they already answer NOT_COMPUTABLE
+      # at runtime, which is a blank the recruiter is told about rather than a
+      # wrong number nobody questions.
+      #
+      # Both take their condition as the first operand, so one guard covers them.
+      # A type the checker cannot determine is left alone, as everywhere else:
+      # never reject on a guess.
+      CONDITIONAL_NODES = [::Dentaku::AST::If, ::Dentaku::AST::Function::Not].freeze
+
       def non_logical_conditions(ast)
         found = []
         AstWalk.each_node(ast) do |node|
-          next unless node.is_a?(::Dentaku::AST::If)
+          next unless CONDITIONAL_NODES.any? { |type| node.is_a?(type) }
 
           actual = type_checker.result_type(AstWalk.children(node).first)
           next if actual.nil? || actual == :logical || actual == TypeChecker::CONFLICT
 
-          found << Diagnostic.new(code: Errors::CONDITION_NOT_LOGICAL, detail: {actual: actual})
+          found << Diagnostic.new(code: Errors::CONDITION_NOT_LOGICAL,
+            detail: {function: AstWalk.node_name(node), actual: actual})
         end
         found.uniq(&:to_h)
       end

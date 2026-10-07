@@ -153,16 +153,52 @@ RSpec.describe Kula::Formula::Compiler do
         end
       end
 
-      it "names the type it was given" do
+      it "names the construct and the type it was given" do
         detail = compiler.compile(%q{if(5, "T", "E")}).diagnostics.first.detail
 
-        expect(detail).to eq(actual: :numeric)
+        expect(detail).to eq(function: "if", actual: :numeric)
       end
 
       it "accepts a real comparison" do
         expect(compiler.compile(%q{if(1 = 2, "T", "E")}).codes).to be_empty
         expect(compiler.compile(%q{if({Base salary} > 0, "T", "E")}).codes).to be_empty
       end
+    end
+
+    # CORE-5504, the other half. not() read a non-boolean as TRUE the same way,
+    # so not(0) answered false where correct truthiness would answer true --
+    # a wrong value in a Yes/No field rather than a blank, and nothing said.
+    describe "a not() operand" do
+      {
+        "a number" => "not(5)",
+        "zero" => "not(0)",
+        "a string" => %q{not("x")},
+        "a numeric field" => "not({Base salary})"
+      }.each do |label, source|
+        it "refuses #{label}" do
+          expect(compiler.compile(source).codes)
+            .to include(Kula::Formula::Errors::CONDITION_NOT_LOGICAL)
+        end
+      end
+
+      it "names not() as the construct" do
+        detail = compiler.compile("not(5)").diagnostics.first.detail
+
+        expect(detail).to eq(function: "not", actual: :numeric)
+      end
+
+      it "accepts a real comparison" do
+        expect(compiler.compile("not(1 = 2)").codes).to be_empty
+        expect(compiler.compile("not({Base salary} > 0)").codes).to be_empty
+      end
+    end
+
+    # and/or already answer NOT_COMPUTABLE at runtime, which is a blank the
+    # recruiter is told about rather than a wrong number. Left as they are, so
+    # this pins that the check did not widen to them and tighten saved formulas.
+    it "leaves a non-boolean and/or operand to the runtime" do
+      expect(compiler.compile("and(5, 1 > 0)").codes).to be_empty
+      expect(compiler.compile("or(0, 1 > 0)").codes).to be_empty
     end
 
     it "reports an unknown field with its position rather than raising" do
