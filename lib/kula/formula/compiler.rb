@@ -25,9 +25,14 @@ module Kula
     # an unknown expected_type at check time, or colliding references at
     # construction.
     class Compiler
-      def initialize(references: [], zone: Catalog::DEFAULT_ZONE)
+      # +scale+ is the number of decimal places the host displays a number at.
+      # Only the text functions need it: every numeric result is rounded by the
+      # host itself, which is why concat was the one path that leaked a division's
+      # full precision. nil keeps the old behaviour.
+      def initialize(references: [], zone: Catalog::DEFAULT_ZONE, scale: nil)
         @resolver = Resolver.new(references)
         @zone = zone
+        @scale = scale
       end
 
       attr_reader :resolver
@@ -48,7 +53,8 @@ module Kula
           diagnostics:
             [unknown_identifiers(ast), unsupported_constructs(ast), unknown_functions(ast),
               variadic_arity(ast), invalid_units(ast), invalid_argument_types(ast),
-              non_logical_conditions(ast), type_checker.check(ast, expected: expected_type)].flatten,
+              dated_text_arguments(ast), non_logical_conditions(ast),
+              type_checker.check(ast, expected: expected_type)].flatten,
           ast: ast
         )
       rescue Resolver::UnknownToken => e
@@ -71,7 +77,7 @@ module Kula
         # nil is a legitimate answer, not a failure: a two-arg if whose predicate
         # does not hold returns nil by design. The paths that genuinely cannot
         # compute raise instead, and are mapped below.
-        [calculator.evaluate!(stored, context), nil]
+        [calculator.evaluate!(stored, context.merge(::Dentaku::AST::StringFunctions::SCALE_KEY => @scale)), nil]
       rescue ::Dentaku::ZeroDivisionError
         [nil, Diagnostic.new(code: Errors::DIVISION_BY_ZERO)]
       rescue ::Dentaku::UnboundVariableError => e
@@ -100,7 +106,7 @@ module Kula
       end
 
       def calculator
-        @calculator ||= Catalog.install(::Dentaku::Calculator.new, zone: @zone)
+        @calculator ||= Catalog.install(::Dentaku::Calculator.new, zone: @zone, scale: @scale)
       end
 
       # Through the calculator, not a bare parser: the parser needs the function
@@ -265,6 +271,39 @@ module Kula
       # A type the checker cannot determine is left alone, as everywhere else:
       # never reject on a guess.
       CONDITIONAL_NODES = [::Dentaku::AST::If, ::Dentaku::AST::Function::Not].freeze
+
+      # A date where a text function wants text. At evaluation a date is an epoch
+      # integer and the language has no separate date value, so the coercion
+      # point cannot tell one from a number: concat("Start: ", today()) wrote
+      # "Start: 1791331200" and len(today()) answered 10. Formatting it there is
+      # not possible without a distinct runtime value, so the author is told to
+      # say which format they want, with format_date.
+      #
+      # An unknown type is allowed through, as everywhere else: never reject on a
+      # guess. A :date-typed FIELD reference is refused, though -- its kind is
+      # known, and the epoch would reach the letter just the same.
+      def dated_text_arguments(ast)
+        found = []
+        AstWalk.each_node(ast) do |node|
+          next unless node.is_a?(::Dentaku::AST::Function)
+
+          name = AstWalk.node_name(node)
+          positions = Catalog::TEXT_ARGUMENTS[name]
+          next if positions.nil?
+
+          args = AstWalk.children(node)
+          wanted = (positions == :all) ? (0...args.size) : positions
+          wanted.each do |index|
+            argument = args[index]
+            next if argument.nil?
+            next unless type_checker.result_type(argument) == :date
+
+            found << Diagnostic.new(code: Errors::DATE_NEEDS_FORMAT,
+              detail: {function: name, argument: index + 1, expects: "format_date"})
+          end
+        end
+        found.uniq(&:to_h)
+      end
 
       def non_logical_conditions(ast)
         found = []

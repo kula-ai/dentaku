@@ -455,5 +455,93 @@ RSpec.describe Kula::Formula::Compiler do
       expect(compiler.compile("revenue * 2").codes)
         .to eq([Kula::Formula::Errors::DANGLING_REFERENCE])
     end
+
+    # CORE-5532. A date is an epoch integer at evaluation and the language has no
+    # separate date value, so the coercion point cannot tell today() from a
+    # number: concat("Start: ", today()) wrote the epoch into the offer letter.
+    # The type checker knows while compiling, which is the only place to say so.
+    describe "a date handed to a text function" do
+      {
+        "concat" => %q{concat("Start: ", today())},
+        "len" => "len(today())",
+        "upper" => "upper(f_joining)",
+        "contains" => %q{contains("x", today())},
+        "equaltext" => %q{equaltext(today(), "x")},
+        "a date FIELD, whose kind is known" => %q{concat("Start: ", f_joining)}
+      }.each do |label, source|
+        it "refuses it through #{label}" do
+          expect(dated.compile(source).codes)
+            .to include(Kula::Formula::Errors::DATE_NEEDS_FORMAT)
+        end
+      end
+
+      it "names the function and the remedy" do
+        detail = dated.compile(%q{concat("Start: ", today())}).diagnostics.first.detail
+
+        expect(detail).to eq(function: "concat", argument: 2, expects: "format_date")
+      end
+
+      # format_date is the remedy, so refusing a date there would refuse the fix.
+      it "accepts the date once it is formatted" do
+        expect(dated.compile(%q{concat("Start: ", format_date(today(), "DD/MM/YYYY"))}).codes)
+          .to be_empty
+      end
+
+      it "leaves a number, an unknown kind and date arithmetic alone" do
+        expect(dated.compile(%q{concat("Pay: ", f_412)}).codes).to be_empty
+        expect(dated.compile(%q{concat("X: ", f_mystery)}).codes).to be_empty
+        expect(dated.compile(%q{datediff(today(), f_joining, "days")}, expected_type: :numeric).codes)
+          .to be_empty
+      end
+
+      let(:dated) do
+        described_class.new(zone: "UTC", references: references + [
+          ref.new(handle: "f_joining", token: "Joining", kind: :date),
+          ref.new(handle: "f_mystery", token: "Mystery", kind: nil)
+        ])
+      end
+    end
+  end
+
+  # CORE-5532. humanize wrote a BigDecimal's full decimal because the gem had no
+  # display scale, so a non-terminating division rendered ~33 places in text
+  # where the host shows 4 -- and len/contains answered on the long form, which
+  # is a wrong number and a wrong boolean rather than a cosmetic one.
+  describe "the display scale" do
+    subject(:scaled) { described_class.new(references: references, zone: "UTC", scale: 4) }
+
+    def value(source, compiler = scaled)
+      compiler.evaluate!(compiler.compile(source).stored).first
+    end
+
+    it "rounds a non-terminating division in every text function" do
+      expect(value(%q{concat("", 100000/3)})).to eq("33333.3333")
+      expect(value("len(100000/3)")).to eq(10)
+      expect(value("upper(100000/3)")).to eq("33333.3333")
+      expect(value("left(100000/3, 5)")).to eq("33333")
+    end
+
+    # The two that answered a wrong VALUE, not just a long string.
+    it "stops contains and equaltext matching digits no reader can see" do
+      expect(value(%q{contains("333333333333", 100000/3)})).to be(false)
+      expect(value(%q{contains("3333", 100000/3)})).to be(true)
+      expect(value(%q{equaltext(100000/3, "33333.3333")})).to be(true)
+    end
+
+    it "leaves everything that already rendered correctly" do
+      expect(value("len(100/4)")).to eq(2)
+      expect(value(%q{concat("", 5.50)})).to eq("5.5")
+      expect(value(%q{concat("", 5.05)})).to eq("5.05")
+      expect(value(%q{concat("", 1 > 0)})).to eq("true")
+      expect(value(%q{concat("", round(100000/3, 2))})).to eq("33333.33")
+      expect(value(%q{lower("ABC")})).to eq("abc")
+      expect(value(%q{trim("  x  ")})).to eq("x")
+    end
+
+    # A host that states no scale keeps what it had, so the gem does not impose a
+    # display rule of its own.
+    it "keeps full precision when no scale is given" do
+      expect(value(%q{concat("", 100000/3)}, compiler).length).to be > 20
+    end
   end
 end

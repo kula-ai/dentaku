@@ -68,6 +68,28 @@ module Kula
         "min" => :all
       }.freeze
 
+      # Which arguments a function turns into TEXT, for the date check in the
+      # compiler. Keyed the same way NUMERIC_ARGUMENTS is, and listing only what
+      # actually coerces -- the string functions above plus the three case/trim
+      # lambdas and the two comparison ones.
+      #
+      # format_date is deliberately absent: it is what an author is told to use,
+      # so refusing a date there would refuse the remedy.
+      TEXT_ARGUMENTS = {
+        "concat" => :all,
+        "len" => [0].freeze,
+        "upper" => [0].freeze,
+        "lower" => [0].freeze,
+        "trim" => [0].freeze,
+        "left" => [0].freeze,
+        "right" => [0].freeze,
+        "mid" => [0].freeze,
+        "find" => [0, 1].freeze,
+        "substitute" => [0, 1, 2].freeze,
+        "contains" => [0, 1].freeze,
+        "equaltext" => [0, 1].freeze
+      }.freeze
+
       # The units advance and difference accept. One statement, because the
       # compiler refuses an unknown one at authoring and both readers below have
       # to agree with that or the refusal is a lie.
@@ -91,10 +113,10 @@ module Kula
       }.freeze
 
       class << self
-        def install(calculator, zone: DEFAULT_ZONE)
+        def install(calculator, zone: DEFAULT_ZONE, scale: nil)
           numeric(calculator)
           dates(calculator, zone)
-          text(calculator)
+          text(calculator, scale)
           nulls(calculator)
           calculator
         end
@@ -258,10 +280,18 @@ module Kula
           calculator.add_function(:day, :numeric, ->(ts) { to_date(ts, zone)&.day })
         end
 
-        def text(calculator)
-          calculator.add_function(:upper, :string, ->(text) { text&.to_s&.upcase })
-          calculator.add_function(:lower, :string, ->(text) { text&.to_s&.downcase })
-          calculator.add_function(:trim, :string, ->(text) { text&.to_s&.strip })
+        # Through humanize, not to_s. These three are registered LAMBDAS rather
+        # than the AST classes the rest of the text functions are, so they never
+        # receive the evaluation context and cannot read the scale from it --
+        # they close over it here, the way the date functions close over zone.
+        # Left on to_s, upper(100000/3) answered "0.33333333333333333333333333333333E5":
+        # scientific notation, which concat has not emitted since kula.21.
+        def text(calculator, scale = nil)
+          humanize = ->(value) { ::Dentaku::AST::StringFunctions.humanize(value, scale) }
+
+          calculator.add_function(:upper, :string, ->(text) { text.nil? ? nil : humanize.call(text).upcase })
+          calculator.add_function(:lower, :string, ->(text) { text.nil? ? nil : humanize.call(text).downcase })
+          calculator.add_function(:trim, :string, ->(text) { text.nil? ? nil : humanize.call(text).strip })
 
           # Case-insensitive by design: comparing against an option label should
           # not require matching its casing.
@@ -271,7 +301,10 @@ module Kula
             # data nobody has filled in.
             next nil if left.nil? || right.nil?
 
-            left.to_s.casecmp?(right.to_s)
+            # humanize, not to_s: equaltext({salary}/3, "33333.3333") compared
+            # against "0.33333333333333333333333333333333e5" and was false for
+            # every text an author could reasonably write.
+            humanize.call(left).casecmp?(humanize.call(right))
           })
 
           # Upstream CONTAINS is already a substring test; this override only adds
@@ -281,7 +314,11 @@ module Kula
           calculator.add_function(:contains, :logical, ->(needle, haystack) {
             next nil if needle.nil? || haystack.nil?
 
-            haystack.to_s.downcase.include?(needle.to_s.downcase)
+            # humanize, not to_s. A BigDecimal haystack rendered in scientific
+            # notation, so contains("333333333333", {salary}/3) matched the run of
+            # threes inside 0.33333333333333333333333333333333e5 -- true against a
+            # string no reader of the offer letter can see.
+            humanize.call(haystack).downcase.include?(humanize.call(needle).downcase)
           })
         end
 

@@ -37,6 +37,15 @@ module Kula
       # recruiter was sent to fill in a field because an admin had typed "five"
       # where a count goes. Refused at authoring instead, with the argument named.
       ARGUMENT_TYPE = "err_formula_argument_type"
+
+      # A date handed to a text function. Dates are carried as epoch integers and
+      # the language has no distinct date value, so at EVALUATION a text function
+      # cannot tell today() from the number 1791331200 -- concat("Start: ",
+      # today()) wrote the epoch into the offer letter and len(today()) answered
+      # 10. The type checker does know, but only while compiling, so this is the
+      # only place the author can be told. format_date is the remedy and is named
+      # in the detail.
+      DATE_NEEDS_FORMAT = "err_formula_date_needs_format"
       NOT_COMPUTABLE = "err_formula_not_computable"
       RESULT_TYPE_MISMATCH = "err_formula_result_type"
 
