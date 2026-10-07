@@ -60,6 +60,53 @@ RSpec.describe Kula::Formula::Compiler do
       end
     end
 
+    # CORE-5503, widened. The readers raise Dentaku::ArgumentError on a literal
+    # they cannot read as a number, which evaluate reports as NOT_COMPUTABLE --
+    # and the host renders that as "waiting on an input". So a recruiter was sent
+    # to fill in a field because an admin had typed "five" where a count goes.
+    describe "a literal where a number is wanted" do
+      {
+        "dateadd's count" => [%q{dateadd(today(), "five", "days")}, "dateadd", 2, "five"],
+        "dateadd's timestamp" => [%q{dateadd("notadate", 1, "days")}, "dateadd", 1, "notadate"],
+        "round's places" => [%q{round(1.5, "x")}, "round", 2, "x"],
+        "abs's operand" => [%q{abs("x")}, "abs", 1, "x"]
+      }.each do |label, (source, function, argument, value)|
+        it "refuses #{label}, naming the argument" do
+          result = compiler.compile(source)
+
+          expect(result.codes).to eq([Kula::Formula::Errors::ARGUMENT_TYPE])
+          expect(result.diagnostics.first.detail)
+            .to eq(function: function, argument: argument, value: value)
+        end
+      end
+
+      # The variadic aggregates take numbers in every position. On a NUMBER field
+      # the result-type check happened to catch these; on a text field nothing did.
+      it "refuses a non-numeric operand to max or min in any position" do
+        expect(compiler.compile(%q{max("a", 1)}).codes).to eq([Kula::Formula::Errors::ARGUMENT_TYPE])
+        expect(compiler.compile(%q{min(1, "b")}).codes).to eq([Kula::Formula::Errors::ARGUMENT_TYPE])
+      end
+
+      # A numeric string coerces on purpose, and the readers compute the right
+      # answer from it -- refusing it would break a formula that works.
+      it "accepts a numeric string, which the readers coerce" do
+        expect(compiler.compile(%q{dateadd(today(), "7", "days")}).codes).to be_empty
+        expect(compiler.compile(%q{round("1.5", 2)}).codes).to be_empty
+      end
+
+      # A field's value cannot be known while the admin is typing, so guessing
+      # would refuse a formula that works.
+      it "leaves a field reference alone" do
+        expect(compiler.compile("dateadd(today(), {Base salary}, \"days\")").codes).to be_empty
+      end
+
+      # date's one-argument form parses TEXT, which is why it is not on the list.
+      it "does not touch a function whose argument is meant to be text" do
+        expect(compiler.compile(%q{date("2026-04-25")}).codes).to be_empty
+        expect(compiler.compile(%q{concat("a", "b")}).codes).to be_empty
+      end
+    end
+
     # CORE-5503. Registered upstream as ->(*args), so the parser's arity check
     # passed an empty call where concat() and abs(-5, 3) are both refused.
     describe "max/min arity" do

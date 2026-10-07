@@ -49,6 +49,24 @@ module Kula
       # Beside the registrations, because the count a function takes is part of
       # declaring it. A function absent here is unrestricted: concat, min, max
       # and coalesce mean whatever number they are given.
+      # Argument positions that have to be a number, per function. Only a LITERAL
+      # is checked -- a field reference cannot be known while the admin types, and
+      # a numeric string coerces on purpose, so dateadd(today(), "7", "days")
+      # stays valid. :all for the variadic aggregates, which take numbers in every
+      # position.
+      #
+      # date is deliberately absent: its one-argument form parses TEXT.
+      NUMERIC_ARGUMENTS = {
+        "dateadd" => [0, 1].freeze,
+        "datediff" => [0, 1].freeze,
+        "round" => [0, 1].freeze,
+        "abs" => [0].freeze,
+        "floor" => [0].freeze,
+        "ceiling" => [0].freeze,
+        "max" => :all,
+        "min" => :all
+      }.freeze
+
       # The units advance and difference accept. One statement, because the
       # compiler refuses an unknown one at authoring and both readers below have
       # to agree with that or the refusal is a lie.

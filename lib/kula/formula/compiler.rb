@@ -47,6 +47,7 @@ module Kula
           dependencies: @resolver.dependencies(stored),
           diagnostics: unknown_identifiers(ast) + unsupported_constructs(ast) +
             unknown_functions(ast) + variadic_arity(ast) + invalid_units(ast) +
+              invalid_argument_types(ast) +
               non_logical_conditions(ast, type_checker) +
               type_checker.check(ast, expected: expected_type),
           ast: ast
@@ -206,6 +207,42 @@ module Kula
             detail: {function: name, unit: unit.value.to_s, expects: Catalog::DATE_UNITS})
         end
         found.uniq(&:to_h)
+      end
+
+      # A literal where the reader wants a number. Only a literal: a field
+      # reference cannot be known while the admin is typing, and a NUMERIC string
+      # coerces deliberately -- dateadd(today(), "7", "days") computes the right
+      # date and has to keep doing so.
+      def invalid_argument_types(ast)
+        found = []
+        AstWalk.each_node(ast) do |node|
+          next unless node.is_a?(::Dentaku::AST::Function)
+
+          name = AstWalk.node_name(node)
+          positions = Catalog::NUMERIC_ARGUMENTS[name]
+          next if positions.nil?
+
+          args = AstWalk.children(node)
+          wanted = (positions == :all) ? (0...args.size) : positions
+          wanted.each do |index|
+            argument = args[index]
+            next unless argument.is_a?(::Dentaku::AST::String)
+            next if numeric_literal?(argument.value)
+
+            found << Diagnostic.new(code: Errors::ARGUMENT_TYPE,
+              detail: {function: name, argument: index + 1, value: argument.value.to_s})
+          end
+        end
+        found.uniq(&:to_h)
+      end
+
+      # Asked the way the readers ask it, so the refusal cannot disagree with what
+      # they would have accepted.
+      def numeric_literal?(value)
+        ::Kernel::BigDecimal(value.to_s)
+        true
+      rescue ::ArgumentError, ::TypeError
+        false
       end
 
       # An if() whose condition is not a boolean. It used to answer THEN for any

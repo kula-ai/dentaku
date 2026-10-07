@@ -31,6 +31,12 @@ module Kula
       # and "", so `if({salary}, "haspay", "nopay")` wrote "haspay" on a zero
       # salary. and/or already decline a non-boolean; this makes if agree.
       CONDITION_NOT_LOGICAL = "err_formula_condition_not_logical"
+      # A literal where a reader wants a number -- dateadd's count, max's
+      # operands. The readers raise on it, which evaluate reports as
+      # NOT_COMPUTABLE, and the host renders that as "waiting on an input": so a
+      # recruiter was sent to fill in a field because an admin had typed "five"
+      # where a count goes. Refused at authoring instead, with the argument named.
+      ARGUMENT_TYPE = "err_formula_argument_type"
       NOT_COMPUTABLE = "err_formula_not_computable"
       RESULT_TYPE_MISMATCH = "err_formula_result_type"
 
