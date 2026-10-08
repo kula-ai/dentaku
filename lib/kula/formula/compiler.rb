@@ -368,10 +368,13 @@ module Kula
           left.category == :operator && left.value == :mod &&
             right.category == :operator && right.value == :negate
         end
-      rescue ::StandardError
+      rescue ::StandardError => e
         # Tokenizing already succeeded once to reach the parser, so this cannot
         # normally fire -- and if a bump ever makes it, the generic syntax code
         # is still a true answer. Losing the original diagnostic would not be.
+        # Said out loud, though: silent, the day it starts firing is the day
+        # every ambiguous percentage quietly goes back to "syntax error".
+        warn("Kula::Formula::Compiler#ambiguous_percent?: #{e.class}: #{e.message}")
         false
       end
 
