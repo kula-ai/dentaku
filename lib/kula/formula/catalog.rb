@@ -95,6 +95,32 @@ module Kula
       # to agree with that or the refusal is a lie.
       DATE_UNITS = %w[day days week weeks month months year years].freeze
 
+      # Narrower than DATE_UNITS, and it has to stay that way: there is no "start
+      # of the day" to move to, so start_day/end_day answer nothing for a day
+      # unit that dateadd accepts happily. Public because a host validating an
+      # author's literal has to ask this list rather than keep a transcription of
+      # it -- a unit added here would otherwise become a refusal of a formula
+      # that works.
+      BOUNDARY_UNITS = %w[week weeks month months quarter quarters year years].freeze
+
+      # The format tokens an author writes, mapped onto strptime's. Public for
+      # the same reason, in the other direction: a token added here and not in a
+      # host's copy becomes a typo nobody catches.
+      #
+      # No width variants: strptime's %d and %m already read both "1" and "01",
+      # and the %-d form is a strftime flag strptime does not accept at all -- so
+      # dd and d are the same instruction to the parser and differ only to the
+      # author.
+      FORMAT_TOKENS = {
+        "yyyy" => "%Y", "yy" => "%y",
+        "MMMM" => "%B", "MMM" => "%b", "MM" => "%m", "M" => "%m",
+        "dd" => "%d", "d" => "%d"
+      }.freeze
+
+      # Longest first, which is the order the keys are written in: "yyyy" has to
+      # be tried before "yy", or a four-digit year reads as two two-digit ones.
+      FORMAT_TOKEN_PATTERN = ::Regexp.union(FORMAT_TOKENS.keys).freeze
+
       VARIADIC_ARITY = {
         "date" => [1, 3].freeze,
         # Registered upstream as ->(*args), so the parser's arity check passes an
@@ -252,9 +278,9 @@ module Kula
 
           # The boundaries a comp cycle is written against. Unit first, matching
           # dateadd's "amount then unit" reading rather than reversing it.
-          calculator.add_function(:start_day, :numeric, ->(unit, ts) { boundary(unit, ts, :start, zone) })
-          calculator.add_function(:end_day, :numeric, ->(unit, ts) { boundary(unit, ts, :end, zone) })
-          calculator.add_function(:lastday, :numeric, ->(ts) { boundary("month", ts, :end, zone) })
+          calculator.add_function(:start_day, :numeric, ->(unit, ts) { boundary(unit, ts, :start, zone, "start_day") })
+          calculator.add_function(:end_day, :numeric, ->(unit, ts) { boundary(unit, ts, :end, zone, "end_day") })
+          calculator.add_function(:lastday, :numeric, ->(ts) { boundary("month", ts, :end, zone, "lastday") })
 
           calculator.add_function(:quarter, :numeric, ->(ts) {
             date = to_date(ts, zone)
@@ -373,18 +399,8 @@ module Kula
         AMBIGUOUS_NUMERIC = %r{\A(\d{1,2})[/-](\d{1,2})[/-](\d{4})\z}
         ISO = /\A\d{4}-\d{1,2}-\d{1,2}\z/
 
-        # The tokens an author writes, mapped onto strptime's. No width variants:
-        # strptime's %d and %m already read both "1" and "01", and the %-d form
-        # is a strftime flag that strptime does not accept at all — so dd and d
-        # are the same instruction to the parser, and differ only to the author.
-        STRPTIME_TOKENS = {
-          "yyyy" => "%Y", "yy" => "%y",
-          "MMMM" => "%B", "MMM" => "%b", "MM" => "%m", "M" => "%m",
-          "dd" => "%d", "d" => "%d"
-        }.freeze
-
         def to_strptime(format)
-          format.gsub(/yyyy|yy|MMMM|MMM|MM|M|dd|d/) { |token| STRPTIME_TOKENS.fetch(token) }
+          format.gsub(FORMAT_TOKEN_PATTERN) { |token| FORMAT_TOKENS.fetch(token) }
         end
 
         # from, to — and "to" defaults to today, which is what a tenure or a
@@ -398,12 +414,24 @@ module Kula
         end
 
         # The first or last day of the period a date falls in.
-        def boundary(unit, timestamp, edge, zone)
+        #
+        # An unrecognised unit raises, as advance already did for the same
+        # mistake: the case below has no else, so start_day("fortnight", ...)
+        # answered nil and the field stayed empty on every offer with nothing
+        # reported anywhere -- while dateadd("fortnight") refused. Stripped and
+        # downcased exactly as normalize_unit does, so " week" is accepted here
+        # too rather than being the one unit shape that silently means nothing.
+        def boundary(unit, timestamp, edge, zone, function)
           date = to_date(timestamp, zone)
           return nil if date.nil?
 
+          text = unit.to_s.strip.downcase
+          # Absent is an unanswered field, which normalize_unit also tolerates.
+          return nil if text.empty?
+          raise ::Kula::Formula::InvalidUnit.new(unit, function, BOUNDARY_UNITS) unless BOUNDARY_UNITS.include?(text)
+
           moved =
-            case unit.to_s.downcase
+            case text
             when "week", "weeks" then (edge == :start) ? date - (date.cwday - 1) : date + (7 - date.cwday)
             when "month", "months" then (edge == :start) ? ::Date.new(date.year, date.month, 1) : ::Date.new(date.year, date.month, -1)
             when "quarter", "quarters" then quarter_edge(date, edge)

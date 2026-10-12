@@ -60,9 +60,6 @@ module Kula
       NOT_COMPUTABLE = "err_formula_not_computable"
       RESULT_TYPE_MISMATCH = "err_formula_result_type"
 
-      # Not a code: named here so the message and the refusal cannot drift.
-      DATE_UNIT_MESSAGE = "day, week, month, year"
-
       ALL = constants.map { |name| const_get(name) }
         .select { |value| value.is_a?(::String) && value.start_with?("err_") }.freeze
     end
@@ -72,15 +69,22 @@ module Kula
     # Dentaku::ArgumentError it became NOT_COMPUTABLE -- "waiting on an input" --
     # which sends the recruiter to fill in a field over an admin's typo.
     class InvalidUnit < ::Dentaku::Error
-      attr_reader :unit, :function
+      attr_reader :unit, :function, :expects
 
       # Carries the function so the runtime diagnostic says what the authoring
       # one does -- the editor names both, and a reader that only knows the unit
       # cannot tell dateadd from datediff.
-      def initialize(unit, function)
+      #
+      # And the accepted set, because it is not the same for every reader:
+      # start_day/end_day refuse a day unit that dateadd accepts, so a single
+      # list in the message would tell the author to write something the function
+      # they used answers nothing for. Defaulted, so an existing raise keeps the
+      # list it always named.
+      def initialize(unit, function, expects = Catalog::DATE_UNITS)
         @unit = unit
         @function = function
-        super("#{function} must be one of #{Errors::DATE_UNIT_MESSAGE}")
+        @expects = expects
+        super("#{function} must be one of #{expects.reject { |text| text.end_with?("s") }.join(", ")}")
       end
     end
 

@@ -88,7 +88,7 @@ module Kula
         # be named -- and it has to be named the same way the compiler names a bad
         # literal, or the two disagree about the same mistake.
         [nil, Diagnostic.new(code: Errors::INVALID_UNIT,
-          detail: {function: e.function, unit: e.unit.to_s, expects: Catalog::DATE_UNITS})]
+          detail: {function: e.function, unit: e.unit.to_s, expects: e.expects})]
       rescue ::Dentaku::ArgumentError
         # Descends from ::ArgumentError rather than Dentaku::Error, so it needs
         # naming: it is what an operation over an unanswered field raises.
@@ -144,10 +144,19 @@ module Kula
       # then asks Ruby for a number with hundreds of millions of digits —
       # synchronously, wherever the host evaluates. Budgets bound the source, not
       # the result, so the operator has to go.
-      # dateadd(timestamp, amount, unit) and datediff(later, earlier, unit): the
-      # unit is the third argument in both.
-      UNIT_FUNCTIONS = %w[dateadd datediff].freeze
-      UNIT_ARGUMENT = 2
+      # Which argument carries the unit, and which units that reader accepts.
+      #
+      # dateadd(timestamp, amount, unit) and datediff(later, earlier, unit) take
+      # it third; start_day(unit, timestamp) and end_day take it FIRST, the
+      # reverse. And the accepted sets differ -- start_day answers nothing for a
+      # day unit -- so one list for all four would have accepted
+      # start_day("day", ...) and left the field empty.
+      UNIT_ARGUMENTS = {
+        "dateadd" => [2, Catalog::DATE_UNITS],
+        "datediff" => [2, Catalog::DATE_UNITS],
+        "start_day" => [0, Catalog::BOUNDARY_UNITS],
+        "end_day" => [0, Catalog::BOUNDARY_UNITS]
+      }.freeze
 
       UNSUPPORTED_NODES = [
         ::Dentaku::AST::Case,
@@ -198,28 +207,32 @@ module Kula
         found.uniq(&:to_h)
       end
 
-      # A dateadd/datediff unit the readers do not know. Only a STRING LITERAL is
-      # checked: a unit arriving from a field cannot be known while the admin is
-      # typing, and guessing would refuse a formula that works. The literal is
-      # the case reported -- a typo -- and the one authoring can do something
-      # about.
+      # A unit the reader does not know. Only a STRING LITERAL is checked: a unit
+      # arriving from a field cannot be known while the admin is typing, and
+      # guessing would refuse a formula that works. The literal is the case
+      # reported -- a typo -- and the one authoring can do something about.
+      #
+      # Every reader that takes a unit, each against its OWN accepted set: the
+      # boundary pair was missing, so start_day("fortnight", today()) was called
+      # valid at authoring and then answered nothing on every offer.
       def invalid_units(ast)
         found = []
         AstWalk.each_node(ast) do |node|
           next unless node.is_a?(::Dentaku::AST::Function)
 
           name = AstWalk.node_name(node)
-          next unless UNIT_FUNCTIONS.include?(name)
+          index, accepted = UNIT_ARGUMENTS[name]
+          next if index.nil?
 
-          unit = AstWalk.children(node)[UNIT_ARGUMENT]
+          unit = AstWalk.children(node)[index]
           next unless unit.is_a?(::Dentaku::AST::String)
-          # Stripped, exactly as normalize_unit strips: the reader accepts " days"
-          # and refusing it here would make authoring stricter than the thing it
-          # is describing.
-          next if Catalog::DATE_UNITS.include?(unit.value.to_s.strip.downcase)
+          # Stripped, exactly as the readers strip: they accept " days" and
+          # refusing it here would make authoring stricter than the thing it is
+          # describing.
+          next if accepted.include?(unit.value.to_s.strip.downcase)
 
           found << Diagnostic.new(code: Errors::INVALID_UNIT,
-            detail: {function: name, unit: unit.value.to_s, expects: Catalog::DATE_UNITS})
+            detail: {function: name, unit: unit.value.to_s, expects: accepted})
         end
         found.uniq(&:to_h)
       end
