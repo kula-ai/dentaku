@@ -46,6 +46,11 @@ module Dentaku
       unbalanced_parenthesis unknown_grouping_token not_implemented_token_category
       orphan_else
       invalid_statement
+      # Not raised by the parser itself: Kula::Formula::Compiler#parse turns any
+      # unexpected error out of the parser into one of these, so "compiling
+      # never raises" holds even when the parser invents a failure nobody
+      # enumerated. Carries the original class and message in meta.
+      parser_failure
     ].freeze
 
     def self.for(reason, **meta)

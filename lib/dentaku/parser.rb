@@ -46,8 +46,14 @@ module Dentaku
 
       output_size = output.length
       args_size = operator.arity || count
-      min_size = operator.arity || operator.min_param_count || count
-      max_size = operator.arity || operator.max_param_count || count
+      # respond_to?, because not every class that reaches the operations stack
+      # answers these: AST::Grouping has neither, and an `]` that closes while a
+      # grouping is still open consumes it here -- raising NoMethodError out of
+      # the parser, past every rescue in Compiler#compile, and 500ing the
+      # authoring endpoint instead of reporting a syntax error. Absent reads as
+      # "no stated bound", which is what `count` already means here.
+      min_size = operator.arity || param_bound(operator, :min_param_count) || count
+      max_size = operator.arity || param_bound(operator, :max_param_count) || count
 
       if output_size < min_size || args_size < min_size
         expect = min_size == max_size ? min_size : min_size..max_size
@@ -282,6 +288,11 @@ module Dentaku
       else
         fail! :unknown_grouping_token, token_name: token.value
       end
+    end
+
+    # A stated operand bound, or nil where the class does not declare one.
+    def param_bound(operator, name)
+      operator.public_send(name) if operator.respond_to?(name)
     end
 
     def fail!(reason, **meta)

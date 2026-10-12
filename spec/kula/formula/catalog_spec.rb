@@ -257,9 +257,33 @@ RSpec.describe Kula::Formula::Catalog do
       end
 
       # Same reasoning as dateadd: a typo'd unit must surface rather than mean
-      # something plausible.
-      it "yields nil for a unit it does not recognise" do
-        expect(calculator.evaluate!(%{start_day("fortnight", #{mid_march})})).to be_nil
+      # something plausible. It used to answer nil here -- the case had no else --
+      # so the comment above described an intention the code did not carry out,
+      # and the field stayed empty on every offer with nothing reported.
+      it "raises for a unit it does not recognise" do
+        expect { calculator.evaluate!(%{start_day("fortnight", #{mid_march})}) }
+          .to raise_error(::Kula::Formula::InvalidUnit)
+      end
+
+      # The accepted set is NARROWER than dateadd's, and that is the whole reason
+      # this needs its own list: there is no start of a day to move to, so a day
+      # unit answers nothing where dateadd takes it happily.
+      it "refuses a day unit, which dateadd accepts" do
+        expect { calculator.evaluate!(%{start_day("day", #{mid_march})}) }
+          .to raise_error(::Kula::Formula::InvalidUnit) { |error| expect(error.expects).to eq(described_class::BOUNDARY_UNITS) }
+        expect(calculator.evaluate!(%{dateadd(#{mid_march}, 1, "day")})).to be_a(::Integer)
+      end
+
+      # As normalize_unit strips. Downcasing alone left this the one unit shape
+      # that silently meant nothing.
+      it "reads a unit with surrounding space" do
+        expect(calculator.evaluate!(%{day(start_day(" month ", #{mid_march}))})).to eq(1)
+      end
+
+      # Absent is an unanswered field, not a typo, and an unanswered field is
+      # tolerated everywhere else in the language.
+      it "answers nothing for an empty unit rather than raising" do
+        expect(calculator.evaluate!(%{start_day("", #{mid_march})})).to be_nil
       end
     end
 

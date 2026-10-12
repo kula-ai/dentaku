@@ -74,6 +74,95 @@ RSpec.describe Kula::Formula::Compiler do
       end
     end
 
+    # A live 500 on staging: parser.rb#consume asks every class on the operations
+    # stack for min_param_count, and AST::Grouping defines neither that nor
+    # arity, so consuming one raised NoMethodError -- out of the parser, past
+    # every rescue in compile, and into the authoring endpoint as a 500 rather
+    # than a refusal the admin could act on.
+    describe "an error the parser was not expected to raise" do
+      it "does not ask a class that states no operand bounds" do
+        expect(::Dentaku::AST::Grouping).not_to respond_to(:min_param_count)
+        expect(::Dentaku::AST::Grouping.arity).to be_nil
+      end
+
+      # The contract Compiler states in its own docs — "compiling never raises
+      # on bad input" — cannot be kept by listing the error classes a parser
+      # might invent, so the parse step reports anything unexpected as a syntax
+      # failure instead of letting it out.
+      it "reports it as a syntax diagnostic rather than raising" do
+        allow_any_instance_of(::Dentaku::Calculator)
+          .to receive(:ast).and_raise(NoMethodError, "undefined method `min_param_count'")
+
+        result = nil
+        expect { result = compiler.compile("1 + 1") }.not_to raise_error
+        expect(result.codes).to eq([Kula::Formula::Errors::SYNTAX])
+        expect(result.diagnostics.first.detail[:message]).to include("NoMethodError")
+      end
+
+      # Our own bugs stay loud: the rescue is on the parse step alone, so a
+      # diagnostic pass that breaks is not reported to an admin as their typo.
+      it "lets an error from our own diagnostics raise" do
+        allow(compiler).to receive(:invalid_units).and_raise(NoMethodError, "ours")
+
+        expect { compiler.compile("dateadd(today(), 1, \"day\")") }.to raise_error(NoMethodError, /ours/)
+      end
+    end
+
+    # The boundary pair was missing from the check entirely: the unit is their
+    # FIRST argument, not their third, so the walk never looked at it and
+    # start_day("fortnight", today()) compiled clean and then answered nothing on
+    # every offer -- the same silent blank CORE-5503 closed for dateadd.
+    describe "a start_day/end_day unit" do
+      it "refuses a literal the reader does not know" do
+        expect(compiler.compile(%{start_day("fortnight", today())}).codes)
+          .to eq([Kula::Formula::Errors::INVALID_UNIT])
+        expect(compiler.compile(%{end_day("sennight", today())}).codes)
+          .to eq([Kula::Formula::Errors::INVALID_UNIT])
+      end
+
+      # The point of keeping the two lists apart. A day unit is accepted by
+      # dateadd and answers nothing here, so sharing DATE_UNITS would have let
+      # this through and left the field empty.
+      it "refuses a day unit and names its own accepted set" do
+        detail = compiler.compile(%{start_day("day", today())}).diagnostics.first.detail
+
+        expect(detail).to eq(function: "start_day", unit: "day",
+          expects: Kula::Formula::Catalog::BOUNDARY_UNITS)
+        expect(compiler.compile(%{dateadd(today(), 1, "day")}).codes).to be_empty
+      end
+
+      it "accepts every unit it does handle, in either case" do
+        Kula::Formula::Catalog::BOUNDARY_UNITS.each do |unit|
+          expect(compiler.compile(%{start_day("#{unit}", today())}).codes).to be_empty
+          expect(compiler.compile(%{end_day("#{unit.upcase}", today())}).codes).to be_empty
+        end
+      end
+
+      # A unit typed as a NUMBER reads through the same to_s.downcase and
+      # answers nil just as a misspelt word does, and nothing else refuses it:
+      # the boundary pair is in neither of the argument-type lists, so only its
+      # result is typed. The host carried this check until the gem gained one.
+      it "refuses a unit that is not a string at all" do
+        detail = compiler.compile("start_day(1, today())").diagnostics.first.detail
+
+        expect(detail).to eq(function: "start_day", unit: "1",
+          expects: Kula::Formula::Catalog::BOUNDARY_UNITS)
+      end
+
+      # As for dateadd: authoring cannot see it, so evaluation has to name it.
+      # This is the case that reached an offer -- the unit came from a field, so
+      # no literal check could have caught it, and boundary answered nil.
+      it "names the code at evaluation for a unit that came from a field" do
+        result = compiler.compile("start_day(s_title, today())")
+        value, diagnostic = compiler.evaluate!(result.stored, {"s_title" => "fortnight"})
+
+        expect(value).to be_nil
+        expect(diagnostic.code).to eq(Kula::Formula::Errors::INVALID_UNIT)
+        expect(diagnostic.detail).to eq(function: "start_day", unit: "fortnight",
+          expects: Kula::Formula::Catalog::BOUNDARY_UNITS)
+      end
+    end
+
     # CORE-5503, widened. The readers raise Dentaku::ArgumentError on a literal
     # they cannot read as a number, which evaluate reports as NOT_COMPUTABLE --
     # and the host renders that as "waiting on an input". So a recruiter was sent
