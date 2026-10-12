@@ -240,7 +240,14 @@ module Kula
           next if index.nil?
 
           unit = AstWalk.children(node)[index]
-          next unless unit.is_a?(::Dentaku::AST::String)
+          # Any literal, not only a string one: start_day(1, today()) reads the
+          # unit through the same to_s.downcase and answers nil for it, so a
+          # numeric unit is the same silent blank written a different way. The
+          # type checker does not catch it either -- the boundary pair is in
+          # neither NUMERIC_ARGUMENTS nor TEXT_ARGUMENTS, and only the result is
+          # typed. A reference is still left alone: a value arriving from a field
+          # cannot be known while the admin is typing.
+          next unless unit.is_a?(::Dentaku::AST::Literal)
           # Stripped, exactly as the readers strip: they accept " days" and
           # refusing it here would make authoring stricter than the thing it is
           # describing.

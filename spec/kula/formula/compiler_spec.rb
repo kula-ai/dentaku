@@ -138,6 +138,17 @@ RSpec.describe Kula::Formula::Compiler do
         end
       end
 
+      # A unit typed as a NUMBER reads through the same to_s.downcase and
+      # answers nil just as a misspelt word does, and nothing else refuses it:
+      # the boundary pair is in neither of the argument-type lists, so only its
+      # result is typed. The host carried this check until the gem gained one.
+      it "refuses a unit that is not a string at all" do
+        detail = compiler.compile("start_day(1, today())").diagnostics.first.detail
+
+        expect(detail).to eq(function: "start_day", unit: "1",
+          expects: Kula::Formula::Catalog::BOUNDARY_UNITS)
+      end
+
       # As for dateadd: authoring cannot see it, so evaluation has to name it.
       # This is the case that reached an offer -- the unit came from a field, so
       # no literal check could have caught it, and boundary answered nil.
