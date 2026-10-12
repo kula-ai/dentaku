@@ -111,8 +111,23 @@ module Kula
 
       # Through the calculator, not a bare parser: the parser needs the function
       # registry to know that ceiling() and the rest exist.
+      #
+      # The blanket rescue is deliberate, and sits HERE rather than around
+      # compile's body: the parser is the one place a malformed source reaches
+      # code that enumerates its own failures, and that enumeration has been
+      # wrong -- consume asked AST::Grouping for min_param_count, which it does
+      # not define, and the NoMethodError went past every rescue in compile and
+      # 500d the authoring endpoint. "Compiling never raises" is the contract;
+      # it cannot be kept by listing the error classes a parser might invent.
+      #
+      # Kept off compile's own body so a bug in OUR diagnostics still raises
+      # loudly instead of being reported to an admin as their syntax error.
       def parse(stored)
         calculator.ast(stored)
+      rescue ::Dentaku::TokenizerError, ::Dentaku::ParseError, ::Dentaku::ArgumentError
+        raise
+      rescue ::StandardError => e
+        raise ::Dentaku::ParseError.for(:parser_failure, message: "#{e.class}: #{e.message}")
       end
 
       # A handle typed directly rather than as {Token} never passes through the
@@ -397,6 +412,12 @@ module Kula
       end
 
       def function_detail(error)
+        # The cause, for the one reason that has no author-facing meaning of its
+        # own: a parser_failure is OUR bug reported as their syntax error, and
+        # without the original class and message in the payload the next one is
+        # invisible to everything but a stack trace.
+        return {message: error.meta[:message]} if error.reason == :parser_failure
+
         named = error.meta[:function_name]
         named.nil? ? nil : {function: named}
       end
