@@ -129,29 +129,37 @@ module Kula
       end
 
       # Diagnostics for a formula whose result does not fit the field it feeds.
+      # +expected+ may be one type or several: a field can accept more than one.
+      # A Yes/No field stores "Y" or "N", so it takes text, and a comparison
+      # answering yes or no is the other obvious way to fill one in.
       def check(node, expected:)
         return [] if expected.nil?
 
-        normalized = normalize(expected)
+        wanted = Array(expected)
+        normalized = wanted.map { |type| normalize(type) }
         # A caller asking for a type the language does not model is a bug in the
         # caller, not a formula the author can fix — say so rather than silently
         # checking nothing.
-        raise ::ArgumentError, "unknown expected type #{expected.inspect}" if normalized.nil?
+        if (unknown_at = normalized.index(nil))
+          raise ::ArgumentError, "unknown expected type #{wanted[unknown_at].inspect}"
+        end
 
-        expected = normalized
+        # One type is reported back as one, so a caller reading detail[:expected]
+        # reads what it always did.
+        reported = (normalized.size == 1) ? normalized.first : normalized
 
         actual = result_type(node)
 
         if actual == CONFLICT
-          return [Diagnostic.new(code: Errors::RESULT_TYPE_MISMATCH, detail: {expected: expected, actual: :conflicting})]
+          return [Diagnostic.new(code: Errors::RESULT_TYPE_MISMATCH, detail: {expected: reported, actual: :conflicting})]
         end
 
         # nil means "could not determine" — do not reject on a guess.
-        return [] if actual.nil? || actual == expected
+        return [] if actual.nil? || normalized.include?(actual)
 
         [Diagnostic.new(
           code: Errors::RESULT_TYPE_MISMATCH,
-          detail: {expected: expected, actual: actual}
+          detail: {expected: reported, actual: actual}
         )]
       end
 

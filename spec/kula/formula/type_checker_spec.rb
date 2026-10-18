@@ -309,3 +309,50 @@ RSpec.describe "#{Kula::Formula::TypeChecker}#operand_diagnostics" do
     expect(codes(%{if(f_num > 1, f_str, "x")})).to be_empty
   end
 end
+
+RSpec.describe "#{Kula::Formula::TypeChecker} accepting more than one type" do
+  subject(:checker) { Kula::Formula::TypeChecker.new(references) }
+
+  let(:ref) { Kula::Formula::Resolver::Reference }
+  let(:references) do
+    [
+      ref.new(handle: "f_num", token: "Salary", kind: :numeric),
+      ref.new(handle: "f_str", token: "Title", kind: :string)
+    ]
+  end
+
+  let(:calculator) { Kula::Formula::Catalog.install(Dentaku::Calculator.new, zone: "UTC") }
+
+  def check(source, expected) = checker.check(calculator.ast(source), expected: expected)
+
+  # A Yes/No field stores "Y" or "N", so it takes text — and a comparison is
+  # the other obvious way to fill one in. Asked for one type only, the second
+  # was refused and the author was told their Yes/No field holds text.
+  it "takes any of the types the field accepts" do
+    expect(check(%{if(f_num > 1, "Y", "N")}, [:string, :logical])).to be_empty
+    expect(check("f_num > 1", [:string, :logical])).to be_empty
+  end
+
+  it "still refuses a type that is in neither" do
+    diagnostics = check("f_num * 2", [:string, :logical])
+
+    expect(diagnostics.map(&:code)).to eq([Kula::Formula::Errors::RESULT_TYPE_MISMATCH])
+    expect(diagnostics.first.detail).to eq({expected: [:string, :logical], actual: :numeric})
+  end
+
+  # Every existing caller passes one symbol and reads detail[:expected] back.
+  it "reports a single expected type the way it always did" do
+    expect(check("f_str", :numeric).first.detail).to eq({expected: :numeric, actual: :string})
+    expect(check("f_num", :numeric)).to be_empty
+  end
+
+  it "still refuses branches that disagree with each other" do
+    diagnostics = check("if(f_num > 1, f_num, f_str)", [:string, :logical])
+
+    expect(diagnostics.first.detail[:actual]).to eq(:conflicting)
+  end
+
+  it "complains about a type the language does not model" do
+    expect { check("f_num", [:string, :banana]) }.to raise_error(ArgumentError, /banana/)
+  end
+end
