@@ -59,6 +59,7 @@ module Kula
       PERCENT_AMBIGUOUS = "err_formula_percent_ambiguous"
       NOT_COMPUTABLE = "err_formula_not_computable"
       RESULT_TYPE_MISMATCH = "err_formula_result_type"
+      OPERAND_TYPE_MISMATCH = "err_formula_operand_type"
 
       ALL = constants.map { |name| const_get(name) }
         .select { |value| value.is_a?(::String) && value.start_with?("err_") }.freeze

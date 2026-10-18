@@ -239,3 +239,120 @@ RSpec.describe Kula::Formula::TypeChecker do
       .to eq([Kula::Formula::Errors::RESULT_TYPE_MISMATCH])
   end
 end
+
+RSpec.describe "#{Kula::Formula::TypeChecker}#operand_diagnostics" do
+  subject(:checker) { Kula::Formula::TypeChecker.new(references) }
+
+  let(:ref) { Kula::Formula::Resolver::Reference }
+  let(:references) do
+    [
+      ref.new(handle: "f_num", token: "Salary", kind: :numeric),
+      ref.new(handle: "f_str", token: "Title", kind: :string),
+      ref.new(handle: "f_unknown", token: "Mystery", kind: nil),
+      ref.new(handle: "f_date", token: "Joining date", kind: :date)
+    ]
+  end
+
+  let(:calculator) { Kula::Formula::Catalog.install(Dentaku::Calculator.new, zone: "UTC") }
+
+  def codes(source) = checker.operand_diagnostics(calculator.ast(source)).map(&:code)
+
+  # Dentaku types every arithmetic node :numeric whatever it is handed, so a
+  # job title times two answered "a number" and satisfied a Number field. It
+  # fell over only when an offer was computed, as err_formula_not_computable
+  # with nothing to say about which half was at fault.
+  it "refuses arithmetic over text" do
+    expect(codes("f_str * 2")).to eq([Kula::Formula::Errors::OPERAND_TYPE_MISMATCH])
+    expect(codes("f_str + 1")).to eq([Kula::Formula::Errors::OPERAND_TYPE_MISMATCH])
+  end
+
+  it "refuses arithmetic over a boolean" do
+    expect(codes("(f_num > 1) * 2")).to eq([Kula::Formula::Errors::OPERAND_TYPE_MISMATCH])
+  end
+
+  it "names what it wanted and what it was given" do
+    detail = checker.operand_diagnostics(calculator.ast("f_str * 2")).first.detail
+
+    expect(detail).to eq({expected: :numeric, actual: :string})
+  end
+
+  it "finds it however deeply it is buried" do
+    expect(codes("round(1 + (f_str * 2), 2)")).to eq([Kula::Formula::Errors::OPERAND_TYPE_MISMATCH])
+  end
+
+  it "reports one of each kind rather than one per operand" do
+    expect(codes("f_str * f_str").size).to eq(1)
+  end
+
+  # A type it cannot determine is allowed through everywhere else in the class,
+  # and a guess here would refuse formulas that are fine.
+  it "says nothing about a field whose kind is unknown" do
+    expect(codes("f_unknown * 2")).to be_empty
+  end
+
+  # An epoch is carried as a number and date arithmetic has its own verdict,
+  # so this check keeps out of it.
+  it "leaves dates to the date checks" do
+    expect(codes("f_date - f_date")).to be_empty
+  end
+
+  it "leaves honest arithmetic alone" do
+    expect(codes("f_num * 2")).to be_empty
+    expect(codes("round(f_num * 0.1 + f_num, 2)")).to be_empty
+    expect(codes("1 + 2")).to be_empty
+  end
+
+  # Only arithmetic. Comparing or joining text is what those operators are for.
+  it "leaves comparisons and text alone" do
+    expect(codes(%{f_str = "Senior"})).to be_empty
+    expect(codes(%{concat(f_str, " - ", f_str)})).to be_empty
+    expect(codes(%{if(f_num > 1, f_str, "x")})).to be_empty
+  end
+end
+
+RSpec.describe "#{Kula::Formula::TypeChecker} accepting more than one type" do
+  subject(:checker) { Kula::Formula::TypeChecker.new(references) }
+
+  let(:ref) { Kula::Formula::Resolver::Reference }
+  let(:references) do
+    [
+      ref.new(handle: "f_num", token: "Salary", kind: :numeric),
+      ref.new(handle: "f_str", token: "Title", kind: :string)
+    ]
+  end
+
+  let(:calculator) { Kula::Formula::Catalog.install(Dentaku::Calculator.new, zone: "UTC") }
+
+  def check(source, expected) = checker.check(calculator.ast(source), expected: expected)
+
+  # A Yes/No field stores "Y" or "N", so it takes text — and a comparison is
+  # the other obvious way to fill one in. Asked for one type only, the second
+  # was refused and the author was told their Yes/No field holds text.
+  it "takes any of the types the field accepts" do
+    expect(check(%{if(f_num > 1, "Y", "N")}, [:string, :logical])).to be_empty
+    expect(check("f_num > 1", [:string, :logical])).to be_empty
+  end
+
+  it "still refuses a type that is in neither" do
+    diagnostics = check("f_num * 2", [:string, :logical])
+
+    expect(diagnostics.map(&:code)).to eq([Kula::Formula::Errors::RESULT_TYPE_MISMATCH])
+    expect(diagnostics.first.detail).to eq({expected: [:string, :logical], actual: :numeric})
+  end
+
+  # Every existing caller passes one symbol and reads detail[:expected] back.
+  it "reports a single expected type the way it always did" do
+    expect(check("f_str", :numeric).first.detail).to eq({expected: :numeric, actual: :string})
+    expect(check("f_num", :numeric)).to be_empty
+  end
+
+  it "still refuses branches that disagree with each other" do
+    diagnostics = check("if(f_num > 1, f_num, f_str)", [:string, :logical])
+
+    expect(diagnostics.first.detail[:actual]).to eq(:conflicting)
+  end
+
+  it "complains about a type the language does not model" do
+    expect { check("f_num", [:string, :banana]) }.to raise_error(ArgumentError, /banana/)
+  end
+end
