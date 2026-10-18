@@ -95,6 +95,39 @@ module Kula
         end
       end
 
+      # Diagnostics for arithmetic over something that cannot be a number.
+      #
+      # Dentaku types an arithmetic node :numeric whatever it is given, so
+      # {Job title} * 2 answers "a number" and satisfies a Number field. It
+      # only comes apart when an offer is computed, where the recruiter gets
+      # err_formula_not_computable and no hint of which part is at fault —
+      # a job title is never going to multiply.
+      #
+      # Text and a boolean only. A date is carried as an epoch and arithmetic
+      # over one is date_arithmetic?'s to judge, and nil is "could not tell",
+      # which every other check in this class deliberately lets through.
+      NON_ARITHMETIC_TYPES = %i[string logical].freeze
+
+      def operand_diagnostics(node)
+        found = []
+
+        AstWalk.each_node(node) do |current|
+          next unless current.is_a?(::Dentaku::AST::Arithmetic)
+
+          children(current).each do |child|
+            type = result_type(child)
+            next unless NON_ARITHMETIC_TYPES.include?(type)
+
+            found << Diagnostic.new(
+              code: Errors::OPERAND_TYPE_MISMATCH,
+              detail: {expected: :numeric, actual: type}
+            )
+          end
+        end
+
+        found.uniq(&:detail)
+      end
+
       # Diagnostics for a formula whose result does not fit the field it feeds.
       def check(node, expected:)
         return [] if expected.nil?

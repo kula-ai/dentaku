@@ -54,6 +54,7 @@ module Kula
             [unknown_identifiers(ast), unsupported_constructs(ast), unknown_functions(ast),
               variadic_arity(ast), invalid_units(ast), invalid_argument_types(ast),
               dated_text_arguments(ast), non_logical_conditions(ast),
+              type_checker.operand_diagnostics(ast),
               type_checker.check(ast, expected: expected_type)].flatten,
           ast: ast
         )
